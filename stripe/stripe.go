@@ -41,6 +41,16 @@ var ErrForeignCustomer = errors.New("pay/stripe: customer reference belongs to a
 // currency_conversion carries that USD total back.
 var ErrNotUSD = errors.New("pay/stripe: amount is not in USD")
 
+// ErrNoReference reports a delivery that moved money but carries no reference
+// to dedupe on, or a reversal whose reference is not distinct from the
+// purchase's.
+//
+// The ledger's idempotency is keyed on the processor's reference; without one a
+// credit posts again on every redelivery. Stripe does not send such a delivery,
+// but the signature only proves who posted the bytes, so the adapter fails
+// closed rather than trusting the shape.
+var ErrNoReference = errors.New("pay/stripe: delivery carries no reference to dedupe on")
+
 // setupFutureUsageOffSession stores the method for a later charge with nobody
 // present. It is a plain string on the create params in stripe-go v85, so the
 // closed vocabulary is declared here rather than left as a literal at the call

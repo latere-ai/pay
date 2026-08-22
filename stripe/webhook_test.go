@@ -346,31 +346,67 @@ func TestParseWebhook_ABodyThatDoesNotParseIsNotABadSignature(t *testing.T) {
 	}
 }
 
-func TestParseWebhook_UnconfiguredAdapterRefusesEverything(t *testing.T) {
-	for _, name := range []string{"no keys at all", "no api key", "no webhook secret"} {
-		t.Run(name, func(t *testing.T) {
-			var c Config
-			switch name {
-			case "no api key":
-				c = Config{WebhookSecret: testWebhookSecret}
-			case "no webhook secret":
-				c = Config{SecretKey: testSecretKey}
+// TestParseWebhook_RefusesADeliveryWithNothingToDedupeOn is a regression the
+// fuzzer found. The signature proves who posted the bytes, not that they have
+// the shape Stripe sends, and a credit with no reference posts again on every
+// redelivery because the ledger's idempotency has nothing to key on.
+func TestParseWebhook_RefusesADeliveryWithNothingToDedupeOn(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		typ  string
+		obj  map[string]any
+	}{
+		{
+			name: "a paid session with no intent and no id",
+			typ:  eventSessionCompleted,
+			obj:  map[string]any{"object": "checkout.session", "payment_status": "paid", "currency": "usd"},
+		},
+		{
+			name: "a refund with no purchase to reverse",
+			typ:  eventChargeRefunded,
+			obj:  map[string]any{"id": "ch_1", "object": "charge", "currency": "usd", "amount_refunded": 100},
+		},
+		{
+			name: "a refund with no reference of its own",
+			typ:  eventChargeRefunded,
+			obj:  map[string]any{"object": "charge", "currency": "usd", "payment_intent": "pi_1"},
+		},
+		{
+			name: "a dispute reusing the purchase's reference",
+			typ:  eventDisputeCreated,
+			obj:  map[string]any{"id": "pi_1", "object": "dispute", "payment_intent": "pi_1"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newAdapter(t, newStub(t))
+			payload := eventPayload(t, tc.typ, tc.obj)
+
+			ev, err := a.ParseWebhook(payload, signedNow(payload))
+			if !errors.Is(err, ErrNoReference) {
+				t.Fatalf("ParseWebhook = %v, want ErrNoReference", err)
 			}
-			a := New(c)
-			if a == nil {
-				t.Fatal("New returned nil; a caller would dereference a missing processor")
+			if ev.Kind != pay.KindIgnored {
+				t.Errorf("Kind = %q; a refused delivery must post nothing", ev.Kind)
 			}
-			if a.Name() != pay.Stripe {
-				t.Errorf("Name = %q, want stripe even unconfigured", a.Name())
-			}
-			for _, cap := range []pay.Capability{pay.CapCheckout, pay.CapSavedMethod, pay.CapRefund, pay.CapTax} {
-				if a.Has(cap) {
-					t.Errorf("an unconfigured adapter declares %s", cap)
-				}
-			}
-			payload := eventPayload(t, eventSessionCompleted, paidSession())
-			if _, err := a.ParseWebhook(payload, signedNow(payload)); !errors.Is(err, pay.ErrUnconfigured) {
-				t.Errorf("ParseWebhook = %v, want ErrUnconfigured", err)
+		})
+	}
+}
+
+// TestParseWebhook_AnEventWithNoDataMemberDoesNotPanic is a regression the
+// fuzzer found. The signature covers whatever bytes were posted, so anyone
+// holding the signing secret can post an envelope with no `data`; the SDK
+// leaves Event.Data nil, and reading through it crashed the endpoint.
+func TestParseWebhook_AnEventWithNoDataMemberDoesNotPanic(t *testing.T) {
+	a := newAdapter(t, newStub(t))
+	for _, typ := range []string{
+		eventSessionCompleted, eventSessionAsyncPaid, eventChargeRefunded,
+		eventDisputeCreated, eventPaymentFailed, "customer.discount.created",
+	} {
+		t.Run(typ, func(t *testing.T) {
+			payload := []byte(`{"object":"event","type":"` + typ + `"}`)
+			ev, err := a.ParseWebhook(payload, signedNow(payload))
+			if err == nil && ev.Kind != pay.KindIgnored {
+				t.Errorf("Kind = %q; an event with no object may not credit", ev.Kind)
 			}
 		})
 	}

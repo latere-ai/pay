@@ -53,18 +53,33 @@ func (a *Adapter) ParseWebhook(payload []byte, h http.Header) (pay.Event, error)
 	if err != nil {
 		return pay.Event{}, constructError(err)
 	}
+	raw := eventObject(ev)
 	switch ev.Type {
 	case eventSessionCompleted, eventSessionAsyncPaid:
-		return a.session(ev.Data.Raw, payload)
+		return a.session(raw, payload)
 	case eventChargeRefunded:
-		return refunded(ev.Data.Raw, payload)
+		return refunded(raw, payload)
 	case eventDisputeCreated:
-		return disputed(ev.Data.Raw, payload)
+		return disputed(raw, payload)
 	case eventPaymentFailed:
-		return paymentFailed(ev.Data.Raw, payload)
+		return paymentFailed(raw, payload)
 	default:
 		return ignored(payload), nil
 	}
+}
+
+// eventObject is the delivery's data.object, or nil when there is none.
+//
+// A verified envelope carrying no `data` member is not hypothetical: the
+// signature covers whatever bytes were posted, so anyone holding the signing
+// secret can post one, and the SDK leaves Data nil rather than erroring. The
+// nil then decodes to a plain error in each branch instead of panicking the
+// endpoint.
+func eventObject(ev stripe.Event) []byte {
+	if ev.Data == nil {
+		return nil
+	}
+	return ev.Data.Raw
 }
 
 // constructError classifies what went wrong before an event existed.
@@ -108,6 +123,12 @@ func (a *Adapter) session(raw, payload []byte) (pay.Event, error) {
 	if s.PaymentStatus != stripe.CheckoutSessionPaymentStatusPaid {
 		return ignored(payload), nil
 	}
+	ref := sessionRef(&s)
+	if ref == "" {
+		// The ledger dedupes on this. A credit with nothing to dedupe on posts
+		// again on every redelivery, so refuse it rather than credit it.
+		return pay.Event{}, fmt.Errorf("%w: a paid checkout session", ErrNoReference)
+	}
 	gross, err := sessionGross(&s)
 	if err != nil {
 		return pay.Event{}, err
@@ -116,7 +137,7 @@ func (a *Adapter) session(raw, payload []byte) (pay.Event, error) {
 		Kind:     pay.KindPaid,
 		Provider: pay.Stripe,
 		Email:    sessionEmail(&s),
-		Ref:      sessionRef(&s),
+		Ref:      ref,
 		Gross:    gross,
 		Meta:     s.Metadata,
 		Raw:      payload,
@@ -215,6 +236,9 @@ func refunded(raw, payload []byte) (pay.Event, error) {
 		return pay.Event{}, fmt.Errorf("pay/stripe: decode charge: %w", err)
 	}
 	ref, amount, cur := latestRefund(&c)
+	if err := reversible(c.PaymentIntent, ref); err != nil {
+		return pay.Event{}, err
+	}
 	return pay.Event{
 		Kind:        pay.KindRefunded,
 		Provider:    pay.Stripe,
@@ -255,6 +279,24 @@ func refundCurrency(refund, charge string) string {
 	return charge
 }
 
+// reversible refuses a clawback that cannot dedupe.
+//
+// A reversal needs both references: the purchase's, to find what was credited,
+// and its own, distinct one, so a second partial refund is not mistaken for a
+// replay of the first. Missing or identical, the reversal would either post
+// nothing or post forever.
+func reversible(ref, reversalRef string) error {
+	switch {
+	case ref == "":
+		return fmt.Errorf("%w: a reversal with no purchase to reverse", ErrNoReference)
+	case reversalRef == "":
+		return fmt.Errorf("%w: a reversal with none of its own", ErrNoReference)
+	case ref == reversalRef:
+		return fmt.Errorf("%w: a reversal reusing the purchase's reference %s", ErrNoReference, ref)
+	}
+	return nil
+}
+
 // disputed reverses a credit a card network clawed back. The dispute's id is
 // the reversal's own reference.
 func disputed(raw, payload []byte) (pay.Event, error) {
@@ -267,6 +309,9 @@ func disputed(raw, payload []byte) (pay.Event, error) {
 	}
 	if err := json.Unmarshal(raw, &d); err != nil {
 		return pay.Event{}, fmt.Errorf("pay/stripe: decode dispute: %w", err)
+	}
+	if err := reversible(d.PaymentIntent, d.ID); err != nil {
+		return pay.Event{}, err
 	}
 	return pay.Event{
 		Kind:        pay.KindDisputed,
