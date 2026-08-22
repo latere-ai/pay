@@ -1,11 +1,14 @@
-// Package pay is Latere's payment port: what taking money requires,
-// without naming a processor. Open a hosted payment page, charge a method
-// somebody already authorised, verify and reduce a webhook.
+// Package pay is the seam between a product and a card processor.
 //
-// It is stdlib only. Processor adapters live in sibling packages, so this
-// one never imports a vendor SDK, and the ledger a product credits lives
-// in latere.ai/x/pay/ledger. See specs/002-payment-port.md.
+// It says what taking money requires — open a hosted payment page, charge a
+// method somebody already authorised, verify and reduce a webhook — without
+// naming the vendor, so the orchestration is testable offline and an adapter
+// is one implementation rather than the only shape money can take.
 //
-// The surface is not implemented yet; this file carries the package
-// identity so the module builds while it is being written.
+// It is stdlib only. Adapters live in sibling packages (pay/stripe), the
+// amount type in pay/money, and the ledger a product credits in pay/ledger.
+// Nothing here knows a ledger exists: a product wires an Event to a ledger
+// write.
+//
+// See specs/002-payment-port.md.
 package pay

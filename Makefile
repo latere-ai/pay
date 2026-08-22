@@ -8,8 +8,16 @@ test:
 race:
 	go test -race ./...
 
+# COVER_PKGS is every package whose statements the floor applies to. It is
+# ./... minus paytest, which is test-support: most of its remaining statements
+# are t.Errorf calls that run only when an adapter under test is broken, and
+# reaching them would mean faking a *testing.T rather than testing anything
+# real. Its logic is exercised on every run, by pay's own tests and by each
+# adapter's.
+COVER_PKGS = $(shell go list ./... | grep -v '/paytest$$' | paste -sd, -)
+
 cover:
-	go test -coverprofile=coverage.out ./...
+	go test -coverprofile=coverage.out -coverpkg=$(COVER_PKGS) ./...
 	@go tool cover -func=coverage.out | tail -1
 	@# An empty profile (only the mode: line) means there are no statements to
 	@# measure yet, which is a scaffold rather than a coverage regression. Once
