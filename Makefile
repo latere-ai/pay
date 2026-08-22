@@ -8,13 +8,16 @@ test:
 race:
 	go test -race ./...
 
-# COVER_PKGS is every package whose statements the floor applies to. It is
-# ./... minus paytest, which is test-support: most of its remaining statements
-# are t.Errorf calls that run only when an adapter under test is broken, and
-# reaching them would mean faking a *testing.T rather than testing anything
-# real. Its logic is exercised on every run, by pay's own tests and by each
-# adapter's.
-COVER_PKGS = $(shell go list ./... | grep -v '/paytest$$' | paste -sd, -)
+# COVER_PKGS is every package whose statements the floor applies to: ./... minus
+# the two conformance suites, paytest and ledgertest.
+#
+# Those are test-support. Most of their remaining statements are t.Errorf calls
+# that run only when the implementation under test is broken, and reaching them
+# would mean faking a *testing.T rather than testing anything real. Their logic
+# is exercised on every single run -- by this repo's own stores and adapters,
+# and by each consumer's -- so they are covered in the sense that matters, just
+# not in the sense a statement counter measures.
+COVER_PKGS = $(shell go list ./... | grep -Ev '/(paytest|ledgertest)$$' | paste -sd, -)
 
 cover:
 	go test -coverprofile=coverage.out -coverpkg=$(COVER_PKGS) ./...
