@@ -1,4 +1,4 @@
-.PHONY: test race cover cover-html fuzz lint tidy
+.PHONY: test race cover cover-html fuzz lint lint-modernize tidy fmt fmt-check hooks
 
 COVER_MIN := 95
 
@@ -41,9 +41,38 @@ fuzz:
 	  done; \
 	done
 
-lint:
+lint: lint-modernize
 	go vet ./...
 	gofmt -l .
 
+# lint-modernize fails on code that a standard library call already covers.
+# It runs the toolchain modernizers, which overlap golangci-lint's modernize
+# linter but add three it does not carry: buildtag, hostport, and the
+# go:fix inline directives. newexpr and errorsastype are off for the reasons
+# recorded in .golangci.yml.
+# Only a non-empty patch fails the target. go fix also exits non-zero when a
+# package does not type-check, which is a build error rather than a finding,
+# so stderr is dropped and the decision rests on the patch alone.
+lint-modernize:
+	@patch=$$(go fix -diff -newexpr=false -errorsastype=false ./... 2>/dev/null); \
+	if [ -n "$$patch" ]; then \
+		echo "$$patch"; \
+		echo "go fix: the diff above is already in the standard library; apply it with go fix"; \
+		exit 1; \
+	fi
+
 tidy:
 	go mod tidy
+
+# fmt formats all Go sources in place.
+fmt:
+	gofmt -w .
+
+# fmt-check fails if any Go source is not gofmt-formatted.
+fmt-check:
+	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt: unformatted files:"; echo "$$out"; exit 1; fi
+
+# hooks installs the repository git hooks (pre-commit gofmt and go fix guards).
+hooks:
+	git config core.hooksPath .githooks
+	@echo "installed git hooks (core.hooksPath=.githooks)"
