@@ -141,18 +141,19 @@ func TestHas_DeclaresTaxOnlyWhenTheDeploymentHasIt(t *testing.T) {
 // because an unsigned input dies at the HMAC and would leave the JSON decoding
 // — the part that actually takes arbitrary bytes off the internet — untouched.
 func FuzzParseWebhook(f *testing.F) {
-	f.Add(eventPayload(&testing.T{}, eventSessionCompleted, paidSession()))
-	f.Add(eventPayload(&testing.T{}, eventChargeRefunded, map[string]any{
+	f.Add(eventPayload(f, eventSessionCompleted, paidSession()))
+	f.Add(eventPayload(f, eventChargeRefunded, map[string]any{
 		"id": "ch_1", "currency": "usd", "amount_refunded": 100, "payment_intent": "pi_1",
 	}))
-	f.Add(eventPayload(&testing.T{}, eventDisputeCreated, map[string]any{"id": "dp_1", "payment_intent": "pi_1"}))
-	f.Add(eventPayload(&testing.T{}, eventPaymentFailed, map[string]any{"id": "pi_1"}))
+	f.Add(eventPayload(f, eventDisputeCreated, map[string]any{"id": "dp_1", "payment_intent": "pi_1"}))
+	f.Add(eventPayload(f, eventPaymentFailed, map[string]any{"id": "pi_1"}))
 	f.Add([]byte(`{"type":"checkout.session.completed","data":{"object":{}}}`))
 	f.Add([]byte(`{}`))
 	f.Add([]byte(``))
 
-	s := newStub(&testing.T{})
-	a := New(Config{SecretKey: testSecretKey, WebhookSecret: testWebhookSecret, backend: s.backend()})
+	// No backend: ParseWebhook never leaves the process, so the adapter needs
+	// no stub and the fuzzer needs no server.
+	a := New(Config{SecretKey: testSecretKey, WebhookSecret: testWebhookSecret})
 
 	f.Fuzz(func(t *testing.T, payload []byte) {
 		ev, err := a.ParseWebhook(payload, signedNow(payload))

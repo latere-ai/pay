@@ -202,7 +202,7 @@ func signedNow(payload []byte) http.Header {
 // api_version is deliberately an old one: every delivery in this suite is
 // therefore on a different API version than the pinned SDK, so the whole suite
 // is a standing test that IgnoreAPIVersionMismatch is on.
-func eventPayload(t *testing.T, typ string, obj any) []byte {
+func eventPayload(t testing.TB, typ string, obj any) []byte {
 	t.Helper()
 	b, err := json.Marshal(map[string]any{
 		"id":          "evt_test_1",
