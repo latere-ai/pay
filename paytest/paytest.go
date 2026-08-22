@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"testing"
 
 	"latere.ai/x/pay"
@@ -43,7 +44,7 @@ func RunProviderContract(t *testing.T, newProvider Factory, caps []pay.Capabilit
 	t.Run("checkout", func(t *testing.T) {
 		p := newProvider(t)
 		got, err := p.CreateCheckout(context.Background(), validCheckout())
-		if !has(caps, pay.CapCheckout) {
+		if !slices.Contains(caps, pay.CapCheckout) {
 			requireUnsupported(t, err)
 			return
 		}
@@ -59,7 +60,7 @@ func RunProviderContract(t *testing.T, newProvider Factory, caps []pay.Capabilit
 		p := newProvider(t)
 		ctx := context.Background()
 		ref, err := p.EnsureCustomer(ctx, "buyer@example.test", nil)
-		if !has(caps, pay.CapSavedMethod) {
+		if !slices.Contains(caps, pay.CapSavedMethod) {
 			requireUnsupported(t, err)
 			if _, err := p.ChargeSaved(ctx, pay.SavedChargeParams{}); !errors.Is(err, pay.ErrUnsupported) {
 				t.Errorf("ChargeSaved without CapSavedMethod = %v, want ErrUnsupported", err)
@@ -167,15 +168,6 @@ func memSecret(p pay.Provider) string {
 		return m.Secret
 	}
 	return ""
-}
-
-func has(caps []pay.Capability, c pay.Capability) bool {
-	for _, x := range caps {
-		if x == c {
-			return true
-		}
-	}
-	return false
 }
 
 func requireUnsupported(t *testing.T, err error) {
