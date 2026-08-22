@@ -245,8 +245,7 @@ func (s *MemStore) Entries(_ context.Context, h Holder, p Page) ([]Entry, error)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []Entry
-	for i := len(s.entries) - 1; i >= 0; i-- {
-		e := s.entries[i]
+	for _, e := range slices.Backward(s.entries) {
 		if e.Holder != h {
 			continue
 		}

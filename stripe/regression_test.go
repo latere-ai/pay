@@ -2,6 +2,7 @@ package stripe
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"testing"
 
@@ -82,9 +83,7 @@ func TestRegression_AnAsyncPurchasePaysTwiceAndMustCreditOnce(t *testing.T) {
 
 	// Delivery two: the debit settled, days later, on the same payment intent.
 	paid := map[string]any{}
-	for k, v := range unpaid {
-		paid[k] = v
-	}
+	maps.Copy(paid, unpaid)
 	paid["payment_status"] = "paid"
 	second := eventPayload(t, eventSessionAsyncPaid, paid)
 	ev, err = a.ParseWebhook(second, signedNow(second))

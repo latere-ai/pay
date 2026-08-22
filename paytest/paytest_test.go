@@ -3,6 +3,7 @@ package paytest_test
 import (
 	"context"
 	"net/http"
+	"slices"
 	"testing"
 
 	"latere.ai/x/pay"
@@ -19,12 +20,7 @@ type bare struct {
 func (b *bare) Name() pay.Name { return pay.Name("bare") }
 
 func (b *bare) Has(c pay.Capability) bool {
-	for _, x := range b.caps {
-		if x == c {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(b.caps, c)
 }
 
 func (b *bare) CreateCheckout(context.Context, pay.CheckoutParams) (pay.Checkout, error) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,9 +19,7 @@ import (
 func post(t *testing.T, h http.Handler, body string, header http.Header) int {
 	t.Helper()
 	r := httptest.NewRequest(http.MethodPost, "/webhooks/pay", strings.NewReader(body))
-	for k, v := range header {
-		r.Header[k] = v
-	}
+	maps.Copy(r.Header, header)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	return w.Code

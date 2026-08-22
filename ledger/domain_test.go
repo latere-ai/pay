@@ -159,7 +159,7 @@ func TestEntriesPagesByTime(t *testing.T) {
 		return base.Add(time.Duration(n) * time.Minute)
 	})
 	h := ledger.Holder("user:a")
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if err := s.Credit(ctx, ledger.Posting{Holder: h, Amount: money.Dollar, Ref: string(rune('a' + i))}); err != nil {
 			t.Fatalf("Credit: %v", err)
 		}
@@ -214,7 +214,7 @@ func TestSettleReleasesEveryOpenHoldForTheGroup(t *testing.T) {
 	if err := s.Credit(ctx, ledger.Posting{Holder: h, Amount: 10 * money.Dollar, Ref: "seed"}); err != nil {
 		t.Fatalf("Credit: %v", err)
 	}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if err := s.Hold(ctx, ledger.Posting{Holder: h, Amount: 3 * money.Dollar, Group: "g"}); err != nil {
 			t.Fatalf("Hold %d: %v", i, err)
 		}

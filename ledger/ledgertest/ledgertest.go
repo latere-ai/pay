@@ -114,7 +114,7 @@ func RunStoreContract(t *testing.T, newStore Factory) {
 		var wg sync.WaitGroup
 		admitted := make([]bool, n)
 		wg.Add(n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			go func(i int) {
 				defer wg.Done()
 				err := s.Hold(ctx, ledger.Posting{Holder: pot, Amount: 3 * money.Dollar, Group: "job-" + strconv.Itoa(i)})
@@ -175,7 +175,7 @@ func RunStoreContract(t *testing.T, newStore Factory) {
 		var wg sync.WaitGroup
 		settled := make([]bool, n)
 		wg.Add(n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			go func(i int) {
 				defer wg.Done()
 				ok, _ := s.Settle(ctx, ledger.Settlement{Holder: pot, Group: "job-1", Cost: money.Dollar})
@@ -369,7 +369,7 @@ func RunStoreContract(t *testing.T, newStore Factory) {
 		window := time.Date(2026, 8, 22, 14, 0, 0, 0, time.UTC)
 		// Six flushes of the window's delta, every other one delivered twice.
 		var want money.Micro
-		for seq := 0; seq < 6; seq++ {
+		for seq := range 6 {
 			delta := money.Micro(1_000 * (seq + 1))
 			want += delta
 			p := ledger.Posting{
@@ -407,7 +407,7 @@ func RunStoreContract(t *testing.T, newStore Factory) {
 
 	t.Run("a statement reads newest first and honours its limit", func(t *testing.T) {
 		s, ctx := newStore(t), context.Background()
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: "r" + strconv.Itoa(i), Reason: ledger.Reason("n" + strconv.Itoa(i))})
 		}
 		got := entries(t, s, ctx, alice)

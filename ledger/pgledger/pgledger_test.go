@@ -54,7 +54,7 @@ func TestPGStoreSatisfiesTheContract(t *testing.T) {
 func TestMigrateIsIdempotent(t *testing.T) {
 	pool := openTest(t)
 	ctx := context.Background()
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if err := pgledger.Migrate(ctx, pool); err != nil {
 			t.Fatalf("migrate %d: %v", i, err)
 		}
@@ -74,7 +74,7 @@ func TestEntriesPagesNewestFirst(t *testing.T) {
 	})
 	ctx := context.Background()
 	h := ledger.NewHolder("user", "pager@example.test")
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if err := s.Credit(ctx, ledger.Posting{
 			Holder: h, Amount: money.Dollar, Ref: "p" + strconv.Itoa(i), Reason: ledger.Reason("n" + strconv.Itoa(i)),
 		}); err != nil {

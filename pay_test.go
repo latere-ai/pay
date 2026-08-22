@@ -66,7 +66,7 @@ func TestUnconfiguredRefusesEverything(t *testing.T) {
 func TestCheckoutRecordsParamsAndMintsDistinctSessions(t *testing.T) {
 	m := &pay.MemProvider{URL: "https://pay.test/x"}
 	ctx := context.Background()
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if _, err := m.CreateCheckout(ctx, pay.CheckoutParams{Amount: 5 * money.Dollar, Currency: money.USD}); err != nil {
 			t.Fatalf("CreateCheckout: %v", err)
 		}
