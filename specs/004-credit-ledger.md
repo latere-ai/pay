@@ -1,6 +1,6 @@
 ---
 title: ledger — the append-only credit ledger every product folds a balance from
-status: drafted
+status: implemented
 repo: latere-ai/pay
 package: latere.ai/x/pay/ledger
 effort: large
@@ -445,3 +445,41 @@ says otherwise.
 ## Dependencies
 
 - [001-money](001-money.md)
+
+## Outcome
+
+**Implemented** 2026-08-22 (`ff05656`, `42b04ac`). 96.0% across shipped
+packages, contract green against real Postgres 16.
+
+The `Ops` / `Store` split works as designed: `pgledger.Store.Bind(pgx.Tx)`
+returns operations that run inside the caller's transaction, and the contract
+asserts that a hold taken there dies with a rollback and survives a commit.
+
+**The contract earned its keep immediately.** It found four bugs in the
+Postgres store before any consumer existed:
+
+1. `ON CONFLICT (grp) WHERE kind = 'debit'` did not match the partial unique
+   index, whose predicate also carries `AND grp IS NOT NULL`. Postgres cannot
+   infer an index from a partial predicate that differs, so settlement was
+   never exactly-once and concurrent settles charged a group repeatedly.
+2. `Transfer` inferred idempotency from a `created_at` window *after* writing
+   the debit, so a replay posted the receiving side twice.
+3. `TotalOutstanding` bound a nil slice as SQL NULL, making the whole predicate
+   NULL, so "all namespaces" summed to zero.
+4. Validation and id minting were duplicated per store, which is how two stores
+   drift into refusing different things.
+
+Additions beyond the spec:
+
+- `ledger.CheckPosting`, `CheckTransfer` and `NewID` are exported, so an
+  implementation of `Ops` in another package shares one definition.
+- `SetRandReadForTest` makes the id-mint failure reachable, which is how the
+  "a write that cannot mint an id must not land" guarantee is tested.
+- `RollupRef` normalises its window to UTC, so a caller in another time zone
+  cannot double-post a window.
+- `MemStore.Within` rolls back by snapshotting, so both stores satisfy the
+  contract's "a failed unit moves nothing".
+
+**Carried from the spec but worth restating:** `BalancesFor` and
+`NegativeHolders` still have no caller anywhere. They are contract-tested and
+speculative.

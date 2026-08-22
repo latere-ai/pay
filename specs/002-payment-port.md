@@ -1,6 +1,6 @@
 ---
 title: payment — the vendor-neutral port money enters through
-status: drafted
+status: implemented
 repo: latere-ai/pay
 package: latere.ai/x/pay
 effort: medium
@@ -349,3 +349,25 @@ processor reports. Nothing here computes VAT.
 ## Dependencies
 
 - [001-money](001-money.md)
+
+## Outcome
+
+**Implemented** 2026-08-22 (`8014a79`), 100% statement coverage on the shipped
+package.
+
+Deviations from the sketch, all deliberate:
+
+- The conformance suite is `paytest.RunProviderContract`, not
+  `paymenttest`. The spec used both names in different places.
+- `hasCapability` is unexported and shared; `MemProvider.Has` treats a nil
+  `Caps` as checkout-plus-refund so the common case needs no configuration,
+  while an explicit empty set declares nothing. That distinction is what lets a
+  consumer test its own `ErrUnsupported` paths.
+- `MemEvent` was added so a test builds a delivery without hand-rolling the
+  encoding.
+- `WithLogger` was added. Deliveries that are dropped rather than retried are
+  invisible otherwise, and "the webhook silently did nothing" is the hardest
+  payment bug to diagnose.
+
+The coverage floor excludes `paytest`: its remaining statements are assertion
+reporting that runs only when an adapter under test is broken.

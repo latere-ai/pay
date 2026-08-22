@@ -1,6 +1,6 @@
 ---
 title: money — the unit every amount in the platform is in
-status: drafted
+status: implemented
 repo: latere-ai/pay
 package: latere.ai/x/pay/money
 effort: small
@@ -168,3 +168,16 @@ EUR, not so the ledger can hold euros.
 ## Dependencies
 
 None. This is the leaf.
+
+## Outcome
+
+**Implemented** 2026-08-22 (`8014a79`), 100% statement coverage, three fuzz
+targets.
+
+Built as specced. Two notes for a reader:
+
+- `Ceil` rounds away from zero in **both** directions and panics on a zero
+  denominator, rather than returning a plausible number for a programming
+  error.
+- `String` widens to six decimals only for sub-cent amounts, so a real charge
+  never displays as `$0.00`.
