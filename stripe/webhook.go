@@ -1,6 +1,7 @@
 package stripe
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -264,19 +265,11 @@ func latestRefund(c *chargePayload) (ref string, amount int64, cur string) {
 	newest := int64(-1)
 	for _, r := range c.Refunds.Data {
 		if r.Created > newest {
-			newest, ref, amount, cur = r.Created, r.ID, r.Amount, refundCurrency(r.Currency, c.Currency)
+			// A refund that omits its own currency inherits the charge's.
+			newest, ref, amount, cur = r.Created, r.ID, r.Amount, cmp.Or(r.Currency, c.Currency)
 		}
 	}
 	return ref, amount, cur
-}
-
-// refundCurrency falls back to the charge's currency for a refund that omits
-// its own.
-func refundCurrency(refund, charge string) string {
-	if refund != "" {
-		return refund
-	}
-	return charge
 }
 
 // reversible refuses a clawback that cannot dedupe.
