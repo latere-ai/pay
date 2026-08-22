@@ -65,10 +65,13 @@ test named for the failure it prevents.
    reversal carries its own reference, distinct from the purchase's, so
    it dedupes independently.
 
-## Design taken from auth, to be built fresh and proven here
+## Requirements with no proven implementation behind them
 
-Shapes worth keeping. None is copied wholesale, and none has ever run
-against a real payment.
+These come from auth's integration, which was written carefully and never
+ran against a real payment. Nothing is copied; each is a requirement to
+be built here and proven here for the first time. They are separated from
+the section above precisely so nobody mistakes a good idea for a tested
+one.
 
 - **The httptest harness.** `stripe-go` allows replacing the backend with
   one built over a custom `http.Client`, so tests point at an
