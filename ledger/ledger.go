@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -278,29 +279,7 @@ func (p Page) limit() int {
 // increasing sequence, so a retried flush posts the same reference and is a
 // no-op, while a lost flush is recovered by the next.
 func RollupRef(h Holder, window time.Time, seq int) string {
-	return string(h) + ":" + window.UTC().Format(time.RFC3339) + ":" + itoa(seq)
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b [21]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		b[i] = '-'
-	}
-	return string(b[i:])
+	return string(h) + ":" + window.UTC().Format(time.RFC3339) + ":" + strconv.Itoa(seq)
 }
 
 // CheckPosting validates a one-sided write before any store is consulted.

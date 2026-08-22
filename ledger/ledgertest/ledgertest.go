@@ -117,7 +117,7 @@ func RunStoreContract(t *testing.T, newStore Factory) {
 		for i := 0; i < n; i++ {
 			go func(i int) {
 				defer wg.Done()
-				err := s.Hold(ctx, ledger.Posting{Holder: pot, Amount: 3 * money.Dollar, Group: "job-" + itoa(i)})
+				err := s.Hold(ctx, ledger.Posting{Holder: pot, Amount: 3 * money.Dollar, Group: "job-" + strconv.Itoa(i)})
 				admitted[i] = err == nil
 			}(i)
 		}
@@ -408,7 +408,7 @@ func RunStoreContract(t *testing.T, newStore Factory) {
 	t.Run("a statement reads newest first and honours its limit", func(t *testing.T) {
 		s, ctx := newStore(t), context.Background()
 		for i := 0; i < 5; i++ {
-			mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: "r" + itoa(i), Reason: ledger.Reason("n" + itoa(i))})
+			mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: "r" + strconv.Itoa(i), Reason: ledger.Reason("n" + strconv.Itoa(i))})
 		}
 		got := entries(t, s, ctx, alice)
 		if len(got) != 5 {
@@ -610,5 +610,3 @@ func entries(t *testing.T, s ledger.Store, ctx context.Context, h ledger.Holder)
 	}
 	return got
 }
-
-func itoa(n int) string { return strconv.Itoa(n) }
