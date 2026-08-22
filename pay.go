@@ -165,6 +165,12 @@ const (
 	// KindRefunded and KindDisputed are money clawed back: reverse the credit.
 	KindRefunded Kind = "refunded"
 	KindDisputed Kind = "disputed"
+	// KindPaymentFailed is a charge that did not go through. It is never a
+	// ledger write, and it is modelled anyway because auto-recharge needs to
+	// know its attempt failed. Reducing it to KindIgnored would mean
+	// WebhookHandler dropped it and a product could never observe a recharge
+	// that silently stopped working.
+	KindPaymentFailed Kind = "payment_failed"
 )
 
 // Event is a verified delivery reduced to what a ledger needs.

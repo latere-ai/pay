@@ -294,11 +294,13 @@ func TestParseWebhook_PaymentFailedIsTelemetryNotALedgerWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseWebhook: %v", err)
 	}
-	if ev.Kind != pay.KindIgnored {
-		t.Errorf("Kind = %q; a failed charge moves no money", ev.Kind)
+	// It is delivered rather than dropped: a failed charge moves no money, but
+	// auto-recharge has to learn that its attempt failed, and an event reduced
+	// to KindIgnored never reaches a handler.
+	if ev.Kind != pay.KindPaymentFailed {
+		t.Errorf("Kind = %q, want payment_failed", ev.Kind)
 	}
-	// The reference still rides along for a caller driving ParseWebhook
-	// itself, which is what auto-recharge telemetry reads.
+	// The reference rides along so telemetry can tie the failure to the attempt.
 	if ev.Ref != "pi_failed" {
 		t.Errorf("Ref = %q, want pi_failed", ev.Ref)
 	}

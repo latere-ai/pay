@@ -233,6 +233,10 @@ const (
     KindPaid     Kind = "paid"     // credit the wallet
     KindRefunded Kind = "refunded" // reverse the credit
     KindDisputed Kind = "disputed" // reverse the credit
+    // KindPaymentFailed moves no money. It is modelled anyway because
+    // auto-recharge has to learn its attempt failed, and an event reduced
+    // to KindIgnored never reaches a handler.
+    KindPaymentFailed Kind = "payment_failed"
 )
 
 // Event is a verified delivery reduced to what a ledger needs. Flat and
@@ -371,3 +375,15 @@ Deviations from the sketch, all deliberate:
 
 The coverage floor excludes `paytest`: its remaining statements are assertion
 reporting that runs only when an adapter under test is broken.
+
+## Outcome addendum, 2026-08-22
+
+`KindPaymentFailed` was added after the Stripe adapter was built. The spec
+listed `payment_intent.payment_failed` as an event to subscribe to and gave it
+no kind, so it reduced to `KindIgnored` and `WebhookHandler` dropped it. A
+telemetry event a product can never observe is a design bug, not a deferral.
+
+A separate fix in `money`: `FuzzString` found that an unknown currency code was
+interpolated raw into the display string, so `Currency("-")` rendered a positive
+`Micro(69)` as `"- 0.000069"`, which reads as negative. The fallback symbol is
+now reduced to letters. The fuzz target that found it is part of `make fuzz`.

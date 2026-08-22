@@ -167,17 +167,30 @@ func (m Micro) String(c Currency) string {
 	return sign + symbol(c) + body
 }
 
-// symbol is the display symbol for c, falling back to the code plus a space so
-// an unknown currency is legible rather than silently unmarked.
+// symbol is the display symbol for c.
+//
+// An unknown currency falls back to its code so the amount is not silently
+// unmarked, but the code is reduced to letters first. Interpolating it raw lets
+// a code containing punctuation forge a sign: Currency("-") rendered
+// Micro(69) as "- 0.000069", a positive amount that reads as a negative one.
+// Found by FuzzString.
 func symbol(c Currency) string {
 	switch c {
 	case USD:
 		return "$"
 	case EUR:
 		return "€"
-	default:
-		return strings.ToUpper(string(c)) + " "
 	}
+	var b strings.Builder
+	for _, r := range strings.ToUpper(string(c)) {
+		if r >= 'A' && r <= 'Z' {
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return b.String() + " "
 }
 
 // Ceil divides num by den rounding away from zero.

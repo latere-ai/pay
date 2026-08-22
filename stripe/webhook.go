@@ -339,6 +339,7 @@ func paymentFailed(raw, payload []byte) (pay.Event, error) {
 		return pay.Event{}, fmt.Errorf("pay/stripe: decode payment intent: %w", err)
 	}
 	e := ignored(payload)
+	e.Kind = pay.KindPaymentFailed
 	e.Ref = pi.ID
 	e.Meta = pi.Metadata
 	return e, nil

@@ -173,6 +173,12 @@ func FuzzParseWebhook(f *testing.F) {
 			if ev.Gross < 0 {
 				t.Fatalf("a credit of %v", ev.Gross)
 			}
+		case pay.KindPaymentFailed:
+			// Telemetry: it carries a reference and never an amount, because
+			// nothing moved.
+			if ev.Gross != 0 {
+				t.Fatalf("a failed payment reported a gross of %d", ev.Gross)
+			}
 		case pay.KindRefunded, pay.KindDisputed:
 			if ev.ReversalRef == "" {
 				t.Fatal("a reversal with no reference of its own")

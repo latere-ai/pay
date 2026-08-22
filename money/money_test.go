@@ -271,3 +271,29 @@ func FuzzSpreadCreditedNeverExceedsGross(f *testing.F) {
 		}
 	})
 }
+
+// A currency code is caller-supplied text. Interpolated raw it can forge a
+// sign: Currency("-") rendered a positive amount as "- 0.000069", which reads
+// as negative. Found by FuzzString.
+func TestAnUnknownCurrencyCannotForgeASign(t *testing.T) {
+	cases := []struct {
+		cur  Currency
+		m    Micro
+		want string
+	}{
+		{"-", 69, "0.000069"},
+		{"-usd", Dollar, "USD 1.00"},
+		{"!!!", Dollar, "1.00"},
+		{"gbp", Dollar, "GBP 1.00"},
+		{"-", -69, "-0.000069"},
+	}
+	for _, tc := range cases {
+		got := Micro(tc.m).String(tc.cur)
+		if got != tc.want {
+			t.Errorf("Micro(%d).String(%q) = %q, want %q", tc.m, tc.cur, got, tc.want)
+		}
+		if (tc.m < 0) != (got[0] == '-') {
+			t.Errorf("Micro(%d).String(%q) = %q: the leading sign does not match the amount", tc.m, tc.cur, got)
+		}
+	}
+}
