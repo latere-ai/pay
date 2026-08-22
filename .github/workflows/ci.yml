@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: pay
+          POSTGRES_USER: pay
+          POSTGRES_DB: pay_test
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+        ports: ['5432:5432']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: vet
+        run: go vet ./...
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+      - name: test with race
+        run: go test -race ./...
+        env:
+          TEST_DATABASE_URL: postgres://pay:pay@localhost:5432/pay_test?sslmode=disable
+      - name: coverage floor
+        run: make cover
+        env:
+          TEST_DATABASE_URL: postgres://pay:pay@localhost:5432/pay_test?sslmode=disable
+      - name: no vendor SDK outside the adapter
+        run: |
+          if go list -deps ./money/... ./ledger/... 2>/dev/null | grep -q 'stripe-go'; then
+            echo "::error::a vendor SDK leaked outside stripe/"; exit 1
+          fi
