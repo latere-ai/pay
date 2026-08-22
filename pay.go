@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"slices"
 
 	"latere.ai/x/pay/money"
 )
@@ -236,9 +235,4 @@ type Provider interface {
 	// headers, and a one-string signature would have to be re-generalised the
 	// day a second adapter lands.
 	ParseWebhook(payload []byte, h http.Header) (Event, error)
-}
-
-// hasCapability is the shared membership test adapters use to implement Has.
-func hasCapability(caps []Capability, c Capability) bool {
-	return slices.Contains(caps, c)
 }

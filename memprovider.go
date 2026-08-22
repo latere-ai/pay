@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -60,21 +61,21 @@ func (m *MemProvider) Has(c Capability) bool {
 	if m.Caps == nil {
 		return c == CapCheckout || c == CapRefund
 	}
-	return hasCapability(m.Caps, c)
+	return slices.Contains(m.Caps, c)
 }
 
 // Checkouts returns a copy of every checkout created, for assertions.
 func (m *MemProvider) Checkouts() []CheckoutParams {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return append([]CheckoutParams(nil), m.checkouts...)
+	return slices.Clone(m.checkouts)
 }
 
 // Charges returns a copy of every off-session charge attempted.
 func (m *MemProvider) Charges() []SavedChargeParams {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return append([]SavedChargeParams(nil), m.charges...)
+	return slices.Clone(m.charges)
 }
 
 // CreateCheckout records the params and returns the canned URL.
