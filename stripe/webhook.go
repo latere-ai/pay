@@ -2,6 +2,7 @@ package stripe
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -50,7 +51,7 @@ func (a *Adapter) ParseWebhook(payload []byte, h http.Header) (pay.Event, error)
 	ev, err := webhook.ConstructEventWithOptions(payload, h.Get(signatureHeader), a.webhookSecret,
 		webhook.ConstructEventOptions{IgnoreAPIVersionMismatch: true})
 	if err != nil {
-		return pay.Event{}, fmt.Errorf("pay/stripe: %w: %v", pay.ErrBadSignature, err)
+		return pay.Event{}, constructError(err)
 	}
 	switch ev.Type {
 	case eventSessionCompleted, eventSessionAsyncPaid:
@@ -64,6 +65,26 @@ func (a *Adapter) ParseWebhook(payload []byte, h http.Header) (pay.Event, error)
 	default:
 		return ignored(payload), nil
 	}
+}
+
+// constructError classifies what went wrong before an event existed.
+//
+// Both outcomes fail closed and both are terminal, so the distinction is for
+// whoever reads the log: a signature that did not verify is an authentication
+// problem worth investigating, and a body that did not parse is a corrupt
+// delivery that a redelivery might fix.
+func constructError(err error) error {
+	for _, sig := range []error{
+		webhook.ErrNotSigned,
+		webhook.ErrInvalidHeader,
+		webhook.ErrNoValidSignature,
+		webhook.ErrTooOld,
+	} {
+		if errors.Is(err, sig) {
+			return fmt.Errorf("pay/stripe: %w: %v", pay.ErrBadSignature, err)
+		}
+	}
+	return fmt.Errorf("pay/stripe: decode delivery: %w", err)
 }
 
 // ignored is the benign event: acknowledged, and nothing posted.
