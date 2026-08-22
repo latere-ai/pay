@@ -2,9 +2,6 @@ package ledger
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
 	"maps"
 	"slices"
 	"sort"
@@ -44,7 +41,7 @@ func (s *MemStore) SetClock(now func() time.Time) {
 
 // Credit adds to a holder, idempotent on Ref.
 func (s *MemStore) Credit(_ context.Context, p Posting) error {
-	if err := checkPosting(p, true); err != nil {
+	if err := CheckPosting(p, true); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -58,7 +55,7 @@ func (s *MemStore) Credit(_ context.Context, p Posting) error {
 // before the work, not here, and a holder who has just gone under is one who
 // owes rather than one who got the work free.
 func (s *MemStore) Debit(_ context.Context, p Posting) error {
-	if err := checkPosting(p, false); err != nil {
+	if err := CheckPosting(p, false); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -69,7 +66,7 @@ func (s *MemStore) Debit(_ context.Context, p Posting) error {
 // Adjust corrects after the fact, in either direction. It carries no
 // uniqueness constraint beyond its own reference.
 func (s *MemStore) Adjust(_ context.Context, p Posting, up bool) error {
-	if err := checkPosting(p, false); err != nil {
+	if err := CheckPosting(p, false); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -83,7 +80,7 @@ func (s *MemStore) Adjust(_ context.Context, p Posting, up bool) error {
 
 // Transfer moves credit between two holders in one atomic step.
 func (s *MemStore) Transfer(_ context.Context, t Transfer) error {
-	if err := checkTransfer(t); err != nil {
+	if err := CheckTransfer(t); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -109,7 +106,7 @@ func (s *MemStore) Transfer(_ context.Context, t Transfer) error {
 // Hold reserves against a holder, refusing when there is not that much
 // available.
 func (s *MemStore) Hold(_ context.Context, p Posting) error {
-	if err := checkPosting(p, false); err != nil {
+	if err := CheckPosting(p, false); err != nil {
 		return err
 	}
 	if strings.TrimSpace(p.Group) == "" {
@@ -375,7 +372,7 @@ func (s *MemStore) post(p Posting, kind Kind, amount money.Micro) error {
 			return nil // idempotent: this reference already moved the balance
 		}
 	}
-	id, err := newID()
+	id, err := NewID()
 	if err != nil {
 		return err
 	}
@@ -403,42 +400,4 @@ func cloneEntry(e Entry) Entry {
 		e.Labels = maps.Clone(e.Labels)
 	}
 	return e
-}
-
-// checkPosting validates a one-sided write before anything is consulted, so
-// every store refuses the same nonsense the same way.
-func checkPosting(p Posting, needRef bool) error {
-	if !p.Holder.Valid() {
-		return ErrNoHolder
-	}
-	if p.Amount <= 0 {
-		return ErrNotPositive
-	}
-	if needRef && strings.TrimSpace(p.Ref) == "" {
-		return ErrNoRef
-	}
-	return nil
-}
-
-// checkTransfer validates a two-sided move.
-func checkTransfer(t Transfer) error {
-	if !t.From.Valid() || !t.To.Valid() {
-		return ErrNoHolder
-	}
-	if t.From == t.To {
-		return ErrSameHolder
-	}
-	if t.Amount <= 0 {
-		return ErrNotPositive
-	}
-	return nil
-}
-
-// newID mints a ledger entry identifier.
-func newID() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("ledger: mint entry id: %w", err)
-	}
-	return hex.EncodeToString(b[:]), nil
 }

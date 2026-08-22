@@ -229,3 +229,130 @@ func TestSettleReleasesEveryOpenHoldForTheGroup(t *testing.T) {
 		t.Errorf("available after settling = %s, want $9: not every hold was released", got.String(money.USD))
 	}
 }
+
+// An entry id that cannot be minted must abort the write. A row with an empty
+// primary key would be a silent corruption of the one table that has to be
+// trustworthy.
+func TestAWriteThatCannotMintAnIDFails(t *testing.T) {
+	restore := ledger.SetRandReadForTest(func([]byte) (int, error) {
+		return 0, errors.New("entropy exhausted")
+	})
+	defer restore()
+
+	s, ctx := ledger.NewMemStore(), context.Background()
+	h := ledger.Holder("user:a")
+	if err := s.Credit(ctx, ledger.Posting{Holder: h, Amount: money.Dollar, Ref: "r"}); err == nil {
+		t.Error("Credit succeeded with no entropy")
+	}
+	if err := s.Debit(ctx, ledger.Posting{Holder: h, Amount: money.Dollar, Ref: "d"}); err == nil {
+		t.Error("Debit succeeded with no entropy")
+	}
+	if err := s.Adjust(ctx, ledger.Posting{Holder: h, Amount: money.Dollar, Ref: "j"}, true); err == nil {
+		t.Error("Adjust succeeded with no entropy")
+	}
+	if err := s.Hold(ctx, ledger.Posting{Holder: h, Amount: money.Dollar, Group: "g"}); err == nil {
+		t.Error("Hold succeeded with no entropy")
+	}
+	if err := s.Transfer(ctx, ledger.Transfer{From: h, To: "user:b", Amount: money.Dollar}); err == nil {
+		t.Error("Transfer succeeded with no entropy")
+	}
+	if _, err := s.Settle(ctx, ledger.Settlement{Holder: h, Group: "g"}); err == nil {
+		t.Error("Settle succeeded with no entropy")
+	}
+	// Nothing was written on any of those paths.
+	if got, _ := s.Balance(ctx, h); got != 0 {
+		t.Errorf("balance = %s, want $0: a write landed despite failing", got.String(money.USD))
+	}
+	if _, err := ledger.NewID(); err == nil {
+		t.Error("NewID succeeded with no entropy")
+	}
+}
+
+// A reversal of a real entry also fails closed when an id cannot be minted.
+func TestReverseFailsWhenAnIDCannotBeMinted(t *testing.T) {
+	s, ctx := ledger.NewMemStore(), context.Background()
+	h := ledger.Holder("user:a")
+	if err := s.Credit(ctx, ledger.Posting{Holder: h, Amount: money.Dollar, Ref: "pi"}); err != nil {
+		t.Fatalf("Credit: %v", err)
+	}
+	restore := ledger.SetRandReadForTest(func([]byte) (int, error) {
+		return 0, errors.New("entropy exhausted")
+	})
+	defer restore()
+	if _, err := s.Reverse(ctx, ledger.Reversal{Of: "pi", Ref: "re"}); err == nil {
+		t.Error("Reverse succeeded with no entropy")
+	}
+	restore()
+	if got, _ := s.Balance(ctx, h); got != money.Dollar {
+		t.Errorf("balance = %s, want $1 untouched", got.String(money.USD))
+	}
+}
+
+// Two holders owing the same amount are ordered by holder, so an operator's
+// debt list is stable between reads rather than shuffling.
+func TestNegativeHoldersBreakTiesStably(t *testing.T) {
+	s, ctx := ledger.NewMemStore(), context.Background()
+	for _, h := range []ledger.Holder{"user:b", "user:a"} {
+		if err := s.Debit(ctx, ledger.Posting{Holder: h, Amount: 3 * money.Dollar, Ref: string(h)}); err != nil {
+			t.Fatalf("Debit: %v", err)
+		}
+	}
+	got, err := s.NegativeHolders(ctx, "user")
+	if err != nil {
+		t.Fatalf("NegativeHolders: %v", err)
+	}
+	if len(got) != 2 || got[0].Holder != "user:a" || got[1].Holder != "user:b" {
+		t.Errorf("equal debts ordered %v, want a then b", got)
+	}
+}
+
+// failAfter fails once n successful reads have happened, so a write that mints
+// more than one id can be interrupted between its two sides.
+func failAfter(n int) func([]byte) (int, error) {
+	count := 0
+	return func(b []byte) (int, error) {
+		if count >= n {
+			return 0, errors.New("entropy exhausted")
+		}
+		count++
+		for i := range b {
+			b[i] = byte(count)
+		}
+		return len(b), nil
+	}
+}
+
+// A transfer that fails between its two sides must not leave money in neither
+// place. The in-memory store has no transaction to roll back, so this pins that
+// the failure is reported rather than half-applied silently.
+func TestATransferInterruptedBetweenItsSidesReportsTheFailure(t *testing.T) {
+	s, ctx := ledger.NewMemStore(), context.Background()
+	if err := s.Credit(ctx, ledger.Posting{Holder: "user:a", Amount: 10 * money.Dollar, Ref: "seed"}); err != nil {
+		t.Fatalf("Credit: %v", err)
+	}
+	restore := ledger.SetRandReadForTest(failAfter(1)) // the debit mints, the credit does not
+	defer restore()
+	err := s.Transfer(ctx, ledger.Transfer{From: "user:a", To: "user:b", Amount: 4 * money.Dollar})
+	restore()
+	if err == nil {
+		t.Fatal("Transfer reported success despite failing between its two sides")
+	}
+}
+
+// The same for settlement, which writes a release and then a debit.
+func TestASettlementInterruptedBetweenItsEntriesReportsTheFailure(t *testing.T) {
+	s, ctx := ledger.NewMemStore(), context.Background()
+	if err := s.Credit(ctx, ledger.Posting{Holder: "project:p", Amount: 10 * money.Dollar, Ref: "seed"}); err != nil {
+		t.Fatalf("Credit: %v", err)
+	}
+	if err := s.Hold(ctx, ledger.Posting{Holder: "project:p", Amount: 4 * money.Dollar, Group: "g"}); err != nil {
+		t.Fatalf("Hold: %v", err)
+	}
+	restore := ledger.SetRandReadForTest(failAfter(1)) // the release mints, the debit does not
+	defer restore()
+	ok, err := s.Settle(ctx, ledger.Settlement{Holder: "project:p", Group: "g", Cost: money.Dollar})
+	restore()
+	if err == nil || ok {
+		t.Fatalf("Settle = %v, %v, want a reported failure", ok, err)
+	}
+}

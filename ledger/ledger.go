@@ -11,7 +11,10 @@
 package ledger
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -298,4 +301,60 @@ func itoa(n int) string {
 		b[i] = '-'
 	}
 	return string(b[i:])
+}
+
+// CheckPosting validates a one-sided write before any store is consulted.
+//
+// It is exported because an implementation of Ops lives in another package and
+// must refuse the same nonsense the same way. Validation duplicated per store
+// is validation that drifts, and in a ledger a drifted refusal is a wrong
+// balance.
+func CheckPosting(p Posting, needRef bool) error {
+	if !p.Holder.Valid() {
+		return ErrNoHolder
+	}
+	if p.Amount <= 0 {
+		return ErrNotPositive
+	}
+	if needRef && strings.TrimSpace(p.Ref) == "" {
+		return ErrNoRef
+	}
+	return nil
+}
+
+// CheckTransfer validates a two-sided move.
+func CheckTransfer(t Transfer) error {
+	if !t.From.Valid() || !t.To.Valid() {
+		return ErrNoHolder
+	}
+	if t.From == t.To {
+		return ErrSameHolder
+	}
+	if t.Amount <= 0 {
+		return ErrNotPositive
+	}
+	return nil
+}
+
+// randRead is the entropy source for entry ids. It is a variable so the failure
+// path is reachable in a test: an id that cannot be minted must abort the write
+// rather than produce an entry with an empty primary key.
+var randRead = rand.Read
+
+// NewID mints a ledger entry identifier. Exported for implementations of Ops
+// living in other packages, so there is one minter rather than one per store.
+func NewID() (string, error) {
+	var b [16]byte
+	if _, err := randRead(b[:]); err != nil {
+		return "", fmt.Errorf("ledger: mint entry id: %w", err)
+	}
+	return hex.EncodeToString(b[:]), nil
+}
+
+// SetRandReadForTest replaces the entropy source and returns a function that
+// restores it. It exists only so the mint-failure path can be exercised.
+func SetRandReadForTest(fn func([]byte) (int, error)) func() {
+	prev := randRead
+	randRead = fn
+	return func() { randRead = prev }
 }

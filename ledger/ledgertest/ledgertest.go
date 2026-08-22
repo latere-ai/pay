@@ -253,6 +253,29 @@ func RunStoreContract(t *testing.T, newStore Factory) {
 		}
 	})
 
+	t.Run("a transfer is validated the same way by every store", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		cases := []struct {
+			name string
+			mv   ledger.Transfer
+			want error
+		}{
+			{"no source", ledger.Transfer{To: bob, Amount: money.Dollar}, ledger.ErrNoHolder},
+			{"no destination", ledger.Transfer{From: alice, Amount: money.Dollar}, ledger.ErrNoHolder},
+			{"malformed source", ledger.Transfer{From: "nocolon", To: bob, Amount: money.Dollar}, ledger.ErrNoHolder},
+			{"zero amount", ledger.Transfer{From: alice, To: bob}, ledger.ErrNotPositive},
+			{"negative amount", ledger.Transfer{From: alice, To: bob, Amount: -1}, ledger.ErrNotPositive},
+			{"same holder", ledger.Transfer{From: alice, To: alice, Amount: money.Dollar}, ledger.ErrSameHolder},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				if err := s.Transfer(ctx, tc.mv); !errors.Is(err, tc.want) {
+					t.Errorf("Transfer = %v, want %v", err, tc.want)
+				}
+			})
+		}
+	})
+
 	t.Run("a transfer may not spend what a hold has committed", func(t *testing.T) {
 		s, ctx := newStore(t), context.Background()
 		mustCredit(t, s, ctx, ledger.Posting{Holder: pot, Amount: 10 * money.Dollar, Ref: "seed"})
