@@ -262,11 +262,9 @@ func (a *Adapter) EnsureCustomer(ctx context.Context, email string, meta map[str
 		return pay.CustomerRef{}, errors.New("pay/stripe: EnsureCustomer needs an email")
 	}
 	found := a.sc.V1Customers.Search(ctx, &stripe.CustomerSearchParams{
-		SearchParams: stripe.SearchParams{
-			Query:  fmt.Sprintf("email:'%s'", escapeQuery(email)),
-			Limit:  stripe.Int64(1),
-			Single: true,
-		},
+		Query:  fmt.Sprintf("email:'%s'", escapeQuery(email)),
+		Limit:  stripe.Int64(1),
+		Single: true,
 	})
 	if err := found.Err(); err != nil {
 		return pay.CustomerRef{}, fmt.Errorf("pay/stripe: search customers: %w", err)
