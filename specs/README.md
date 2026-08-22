@@ -14,7 +14,7 @@ here: that work changes other repos, this directory describes this one.
 |---|---|---|---|
 | [001-money.md](001-money.md) | `money` | The amount type, currency vocabulary, rounding rule, and purchase-spread formula every money path shares | ✅ implemented |
 | [002-payment-port.md](002-payment-port.md) | root | The vendor-neutral port: hosted checkout, off-session charge against a saved method, verified webhooks reduced to a flat event | ✅ implemented |
-| [003-stripe-adapter.md](003-stripe-adapter.md) | `stripe` | One proven integration, one design reference | drafted |
+| [003-stripe-adapter.md](003-stripe-adapter.md) | `stripe` | One proven integration, one design reference | ✅ implemented |
 | [004-credit-ledger.md](004-credit-ledger.md) | `ledger` | Append-only micro-USD ledger: balance as a fold, holds, exactly-once settlement, idempotent writes, and the rollup shape a high-rate gateway needs | ✅ implemented |
 | [005-stripe-operations.md](005-stripe-operations.md) | — | Running the account: webhook events, the settings that change what a customer is charged, the local loop, rollout | drafted |
 

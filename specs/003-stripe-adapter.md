@@ -1,6 +1,6 @@
 ---
 title: pay/stripe — one proven integration, one design reference
-status: drafted
+status: implemented
 repo: latere-ai/pay
 package: latere.ai/x/pay/stripe
 effort: medium
@@ -146,3 +146,95 @@ PayPal and Paddle. The port is shaped so they fit; neither is built now.
 ## Dependencies
 
 - [002-payment-port](002-payment-port.md)
+
+## Outcome
+
+Implemented 2026-08-22 as `latere.ai/x/pay/stripe`, on stripe-go v85.2.0,
+at **100% statement coverage** of the package.
+
+`New(Config)` never returns nil; without both secrets every operation is
+`ErrUnconfigured`. `CreateCheckout` is payment-mode with inline
+`price_data`, Managed Payments disabled per session, automatic tax off
+unless the deployment turned Stripe Tax on *and* the checkout asked for
+it, `setup_future_usage: off_session` with `customer_creation: always`
+when a method is being saved, and the caller's idempotency key when there
+is one. `EnsureCustomer` searches then creates under a key derived from
+the address. `ChargeSaved` confirms an off-session PaymentIntent.
+`ParseWebhook` maps exactly the five events in
+[005](005-stripe-operations.md).
+
+The SDK client is per-adapter (`stripe.NewClient` with injected backends)
+rather than the package-level globals both references used: two products
+in one process can then hold different keys, and the test harness needs
+no global mutation.
+
+### What the spec got wrong
+
+- **"no typed field in the SDK"** is true of v82 and stale for v85, which
+  has `CheckoutSessionCreateManagedPaymentsParams`. `AddExtra` is kept —
+  it is what the proven integration sends and the wire bytes are
+  identical — and the regression test asserts the parameter appears
+  **exactly once**, so adopting the typed field later without removing
+  the `AddExtra` fails rather than silently sending two values.
+- **`requires_action` is not how an off-session challenge arrives.** The
+  spec describes it as a result; Stripe answers 402 with a `card_error`
+  whose code is `authentication_required`, carrying the intent on the
+  error. Mapping every `card_error` to `ErrDeclined` would turn each EU
+  3-D Secure challenge into a permanent decline. Both shapes are handled
+  and both are covered.
+- **The port documents the adapter following a charge to its balance
+  transaction** for the USD a converted charge is worth. `ParseWebhook`
+  takes no context and no network, so the figure comes from the session's
+  `currency_conversion.amount_total`, which is the total in the creation
+  currency and is what Adaptive Pricing puts there. No API call, same
+  number, and a delivery still parses with the account unreachable.
+- **`payment_intent.payment_failed` has no `Kind`.** The port models
+  money moving; a failed charge moved none. It reduces to `KindIgnored`
+  carrying the intent's reference and metadata, which `WebhookHandler`
+  drops. A consumer wanting auto-recharge telemetry has to call
+  `ParseWebhook` itself, or the port needs a kind for it.
+
+### Where the two references disagreed
+
+- **Which refund a `charge.refunded` is about.** replichai takes
+  `refunds.data[n-1]`. Stripe returns list objects newest-first, so that
+  is the *oldest* refund: a second partial refund would re-emit a
+  reference the ledger already posted and the clawback would vanish into
+  the dedupe. This adapter picks the refund with the greatest `created`.
+  The regression fixture carries two refunds, because a one-refund
+  fixture passes under either rule and pins nothing.
+- **Idempotency on customer creation.** Neither reference has any.
+  Stripe search is eventually consistent, so a retry seconds after the
+  first call can miss and reach the create; the key derived from the
+  address is what makes that create return the original customer.
+
+### Not built here
+
+The webhook-replay table, the billing portal, setup-mode sessions and the
+`SKIP LOCKED` outbox are consumer- or storage-side and have no method on
+`pay.Provider`. Saving a method is covered by `SaveMethod` on a payment
+session, which is what auto-recharge needs; a portal would be a new port
+method rather than an adapter detail.
+
+### What is not covered, and why
+
+Nothing in the package is uncovered. Three behaviours are *asserted
+against a stub rather than against Stripe*, and only a live test-mode run
+closes that gap. Named here rather than left implicit, with the card from
+[005](005-stripe-operations.md) that exercises each:
+
+| Behaviour | Card |
+|---|---|
+| Managed Payments actually off, so the charge equals the quote | any, checked on the resulting PaymentIntent |
+| `authentication_required` really is a 402 card_error | `4000 0025 0000 3155` |
+| An async method really leaves `completed` unpaid | a SEPA or iDEAL test payment |
+
+### Found by the fuzzer
+
+`FuzzParseWebhook` signs each input with the harness secret, so it
+exercises decoding rather than the HMAC. It found two crashes in the
+first minute, both now regression tests: an event with no `data` member
+nil-dereferenced the endpoint, and a paid session with no payment intent
+produced a credit with no reference, which the ledger cannot dedupe and
+which would therefore post again on every redelivery. Both now fail
+closed, and reversals gained the same guard.
