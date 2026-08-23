@@ -7,7 +7,7 @@ effort: medium
 created: 2026-08-22
 updated: 2026-08-22
 author: changkun
-trigger: the origin product's `internal/payment` is already the right abstraction (100% covered, Stripe named in exactly one place downstream of it) but it is private to one product, and its shape assumes a human clicking a hosted checkout once. A credits product needs auto-recharge, which means a saved payment method and an off-session charge, and retrofitting that into `Provider` later breaks every consumer. Extract the port now, with the shape that survives PayPal and a merchant of record.
+trigger: the origin product's own payment package is already the right abstraction (100% covered, Stripe named in exactly one place downstream of it) but it is private to that one product, and its shape assumes a human clicking a hosted checkout once. A credits product needs auto-recharge, which means a saved payment method and an off-session charge, and retrofitting that into `Provider` later breaks every consumer. Extract the port now, with the shape that survives PayPal and a merchant of record.
 ---
 
 # payment
@@ -166,8 +166,8 @@ type CheckoutParams struct {
     // the credited amount reaches the webhook without being recomputed.
     Meta map[string]string
     // IdempotencyKey makes a retried create return the same session
-    // rather than a second one. the origin product has none, which is fine when a
-    // human clicks once and not fine when a recharge daemon retries.
+    // rather than a second one. The origin product has none, which is fine
+    // when a human clicks once and not fine when a recharge daemon retries.
     IdempotencyKey string
     // Tax says how the charge is taxed. TaxNone keeps the charge equal to
     // what the app quoted; TaxAutomatic lets the processor compute it and
@@ -313,8 +313,8 @@ processor.
 1. **Nothing in this package names a vendor.** `Name` holds identifiers,
    not behaviour. The one permitted vendor-shaped field is `Event.Raw`.
 2. **No application policy.** The port never emails, never freezes an
-   account, never decides what a purchase is worth. the origin product's
-   `reversePurchase` reads the balance before, reverses, then notifies on
+   account, never decides what a purchase is worth. The origin product's
+   purchase reversal reads the balance before, reverses, then notifies on
    the zero crossing; the crossing detection and the mail are the app's,
    and the ledger's `Reverse` returns before/after so the app can decide
    (spec 004).

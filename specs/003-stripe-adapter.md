@@ -7,21 +7,20 @@ effort: medium
 created: 2026-08-22
 updated: 2026-08-22
 author: changkun
-trigger: the origin product is the only Stripe integration in the family that has ever taken a payment. auth shipped a second one that was never used end to end and is being deleted. The adapter is built on the proven one, with the shapes the unproven one worked out carried over as design and proven here for the first time.
+trigger: the origin product is the only Stripe integration in this family of services that has ever taken a payment. A second one was written elsewhere, never used end to end, and is being deleted. The adapter is built on the proven one, with the shapes the unproven one worked out carried over as design and proven here for the first time.
 ---
 
 # pay/stripe
 
 ## One proven integration, one design reference
 
-**the origin product is the only Stripe integration in the family that has ever
-taken a payment.** auth shipped a second one, on stripe-go v85, that was
-never used end to end; its code is deleted by
-[pay-02](pay-02-remove-dead-billing.md). What survives from it is design,
-and it is labelled as such below because unproven code that reads as
-proven is how a bug gets inherited with confidence.
+**The origin product is the only Stripe integration in this family of services
+that has ever taken a payment.** A second one, on stripe-go v85, was written
+elsewhere and never used end to end; that code has since been removed. What
+survives from it is design, and it is labelled as such below because unproven
+code that reads as proven is how a bug gets inherited with confidence.
 
-| Capability | the origin product (v82, **in production**) | auth (v85, **never used**, deleted) |
+| Capability | The origin product (v82, **in production**) | The second integration (v85, **never used**, removed) |
 |---|---|---|
 | Checkout mode | payment, one-off top-up | subscription |
 | Save a method | no | setup-mode session |
@@ -86,7 +85,7 @@ one.
   crediting. A bad signature still fails closed. Both implementations
   arrived at this independently, which is the strongest available signal
   that it is load-bearing.
-- **A webhook-replay table.** the origin product leans entirely on the ledger's
+- **A webhook-replay table.** The origin product leans entirely on the ledger's
   unique index, correct for a credit but silent for an event that is not
   a ledger write. Carry the table so a replayed non-crediting event is
   also a no-op and an operator can retry a failed delivery.
@@ -102,7 +101,7 @@ one.
   maps to `pay.ErrDeclined` and must never be retried; `requires_action`
   maps to `ChargePending` with a webhook to follow. Auto-recharge runs on
   this, and neither implementation has it.
-- **Idempotency keys** on every mutating call. the origin product has none, which
+- **Idempotency keys** on every mutating call. The origin product has none, which
   is fine when a human clicks once and not fine when a daemon retries.
 - **`ParseWebhook(payload, http.Header)`**: reads `Stripe-Signature` from
   the header set rather than a bare string, which is where the
@@ -112,7 +111,7 @@ one.
 
 ## Version
 
-Pin **stripe-go v85**. the origin product moves forward from v82; nothing in its
+Pin **stripe-go v85**. The origin product moves forward from v82; nothing in its
 adapter depends on v82 specifics.
 
 ## Webhook signature
@@ -160,8 +159,8 @@ it, `setup_future_usage: off_session` with `customer_creation: always`
 when a method is being saved, and the caller's idempotency key when there
 is one. `EnsureCustomer` searches then creates under a key derived from
 the address. `ChargeSaved` confirms an off-session PaymentIntent.
-`ParseWebhook` maps exactly the five events in
-[005](005-stripe-operations.md).
+`ParseWebhook` maps exactly the five events listed in
+[the Stripe operations guide](../docs/stripe-operations.md).
 
 The SDK client is per-adapter (`stripe.NewClient` with injected backends)
 rather than the package-level globals both references used: two products
@@ -196,7 +195,7 @@ no global mutation.
 
 ### Where the two references disagreed
 
-- **Which refund a `charge.refunded` is about.** the origin product takes
+- **Which refund a `charge.refunded` is about.** The origin product takes
   `refunds.data[n-1]`. Stripe returns list objects newest-first, so that
   is the *oldest* refund: a second partial refund would re-emit a
   reference the ledger already posted and the clawback would vanish into
@@ -221,7 +220,8 @@ method rather than an adapter detail.
 Nothing in the package is uncovered. Three behaviours are *asserted
 against a stub rather than against Stripe*, and only a live test-mode run
 closes that gap. Named here rather than left implicit, with the card from
-[005](005-stripe-operations.md) that exercises each:
+[the Stripe operations guide](../docs/stripe-operations.md) that exercises
+each:
 
 | Behaviour | Card |
 |---|---|

@@ -7,7 +7,7 @@ effort: large
 created: 2026-08-22
 updated: 2026-08-22
 author: changkun
-trigger: the origin product's `internal/credit` is a correct money ledger (balance as a fold, holds excluded from available, exactly-once settlement by partial unique index, idempotency by external reference) locked inside one product and entangled with that product's authz and pricing. a high-rate gateway needs the same guarantees for a different traffic shape: thousands of short gateway calls a second, already metered into Redis counters because Postgres per request did not scale. Extract the core, and shape the port so both traffic shapes fit.
+trigger: the origin product's own credit package is a correct money ledger (balance as a fold, holds excluded from available, exactly-once settlement by partial unique index, idempotency by external reference) locked inside one product and entangled with that product's authz and pricing. A high-rate gateway needs the same guarantees for a different traffic shape: thousands of short gateway calls a second, already metered into Redis counters because Postgres per request did not scale. Extract the core, and shape the port so both traffic shapes fit.
 ---
 
 # ledger
@@ -56,18 +56,19 @@ flowchart LR
 A **holder** is one namespaced string, `"<namespace>:<id>"`, rather than
 several nullable columns, so a balance is one predicate and a level
 added later does not reshape the table. Products own their namespaces:
-the origin product keeps `user:` and `project:`, a gateway uses `principal:` and, when
-org billing lands, `org:`.
+the origin product keeps `user:` and `project:`, the gateway uses `principal:`
+and, when org billing lands, `org:`.
 
-**`user:<email>` is not a legacy namespace to be tidied away.** the origin product
-keys wallets by email for a specific property: an admin can fund somebody
+**`user:<email>` is not a legacy namespace to be tidied away.** The origin
+product keys wallets by email for a specific property: an admin can fund somebody
 before they have ever signed in, which is the seed-by-email rule its
 access model follows throughout. Migrating those holders to
 `principal:<uuid>` would destroy it. The namespace survives, unmigrated,
 and this paragraph exists so nobody "cleans it up" later.
 
-the second implementation's `billing.Payer` already renders as `principal:<id>` / `org:<id>`,
-independently arrived at. Adopt that rendering verbatim rather than
+The second implementation's payer type already renders as
+`principal:<id>` / `org:<id>`, independently arrived at. Adopt that rendering
+verbatim rather than
 inventing a parallel convention. The package validates the shape and never
 resolves an id: **the ledger has no foreign keys**, because a ledger must
 outlive the thing it is about. Deleting a project must not delete the
@@ -75,7 +76,7 @@ record of what its sessions cost.
 
 ### Kind and reason
 
-the origin product's eight kinds mix two different things: ledger mechanics
+The origin product's eight kinds mix two different things: ledger mechanics
 (does this commit, does it settle) and product vocabulary (`draft` is a
 description-drafting model call). Splitting them is what makes the
 package shareable.
@@ -101,11 +102,11 @@ const (
 type Reason string
 ```
 
-the origin product's `topup` becomes `KindCredit` + `Reason("topup")`, its
+The origin product's `topup` becomes `KindCredit` + `Reason("topup")`, its
 `allocate`/`reclaim` become `KindTransfer` with reasons, its `draft`
-becomes `KindDebit` + `Reason("draft")`. No behaviour changes; the
-mapping is mechanical and covered by the migration in
-[pay-04](pay-04-the origin product.md).
+becomes `KindDebit` + `Reason("draft")`. No behaviour changes; the mapping is
+mechanical, and it is covered by the cross-repo migration tracked outside this
+repository rather than by anything here.
 
 ### The sign rule
 
@@ -115,7 +116,7 @@ mapping is mechanical and covered by the migration in
 func (k Kind) Sign() int // +1, -1, or 0 for the two-signed kinds
 ```
 
-This is not stylistic. the gateway's `internal/rates` returns
+This is not stylistic. The gateway's rate lookup returns
 `cost_usd_micro = -1` for a model it cannot price, and today that is
 safe only because the one consumer filters it. Passing that number into
 a signed-amount API would post a one-micro *credit*. So: `Debit` takes a
@@ -141,13 +142,14 @@ type Entry struct {
     Ref string
     // Group ties entries that belong together: the two sides of a
     // transfer, and the hold / release / debit of one unit of work. It
-    // replaces the origin product's `job_id` with a name that does not assume a job.
+    // replaces the origin product's `job_id` with a name that does not
+    // assume a job.
     Group string
     // Actor is who caused this, for the statement and the audit trail.
     Actor string
     // Labels are product dimensions the ledger stores and never
-    // interprets: the origin product's project name snapshot, the gateway's cost tag. A
-    // snapshot, not a reference, which is what lets a purged project
+    // interprets: the origin product's project name snapshot, the gateway's
+    // cost tag. A snapshot, not a reference, which is what lets a purged project
     // still read correctly in an old statement.
     Labels    map[string]string
     CreatedAt time.Time
@@ -158,7 +160,7 @@ type Entry struct {
 
 This is the hardest part of the extraction and it deserves the argument.
 
-the origin product deliberately keeps `Hold` and `Settle` **off** its `Store`
+The origin product deliberately keeps `Hold` and `Settle` **off** its `Store`
 interface, because they must run inside the transaction that inserts the
 session row. A session may never be terminal and unsettled, and a
 `pgx.Tx` handle cannot pass through an interface that both a Postgres
@@ -194,8 +196,8 @@ type Store interface {
     NegativeHolders(ctx context.Context, namespace string) ([]HolderBalance, error)
     TotalOutstanding(ctx context.Context, namespaces ...string) (money.Micro, error)
     // BalancesFor and NegativeHolders have ZERO callers in the origin product
-    // today: both were built for its spec 026 (an admin people table at
-    // scale), which is designed-not-built, and `Admin.List` still does
+    // today: both were built for a designed-not-built admin people table at
+    // scale, and `Admin.List` still does
     // the N+1 balance loop. They are carried into the port because the
     // Postgres implementations exist and are contract-tested, not
     // because anything reads them. Flagged rather than smuggled.
@@ -219,10 +221,10 @@ func (s *Store) Bind(tx pgx.Tx) ledger.Ops
 
 The in-memory store's writes lock the store itself and satisfy `Ops`
 directly. Both are driven through
-`ledgertest.RunStoreContract(t, factory)`, which is the origin product's
-`store_contract_test.go` (646 lines, already green against real
-Postgres 16) generalised and exported, so "does this store behave" is one
-suite rather than a per-product opinion.
+`ledgertest.RunStoreContract(t, factory)`, which is the origin product's store
+contract suite (646 lines, already green against real Postgres 16) generalised
+and exported, so "does this store behave" is one suite rather than a
+per-product opinion.
 
 ### Postings
 
@@ -265,8 +267,8 @@ type Reversal struct {
 }
 
 // Effect is what a Reverse did, so the app can act on a crossing without
-// the ledger knowing what a crossing means. the origin product freezes an account
-// and emails on Before >= 0 && After < 0; that policy stays in the origin product.
+// the ledger knowing what a crossing means. The origin product freezes an
+// account and emails on Before >= 0 && After < 0; that policy stays there.
 type Effect struct {
     Applied bool
     Amount  money.Micro
@@ -310,10 +312,10 @@ Two invariants carried over verbatim, because each was earned:
 
 ## The rollup debit, which is what lets a gateway use this at all
 
-the origin product's traffic is long sessions: one hold, one settle, tens of rows
-a day. the gateway's is a gateway: thousands of short calls a second, already
-metered into Redis day and month counters with S3 archival, precisely
-because a Postgres row per request did not scale (a gateway its own metering specs).
+The origin product's traffic is long sessions: one hold, one settle, tens of
+rows a day. The gateway's is the opposite: thousands of short calls a second,
+already metered into Redis day and month counters with S3 archival, precisely
+because a Postgres row per request did not scale.
 
 So the port must not assume one row per billable event. It does not need
 a new method; it needs a documented shape and one guarantee.
@@ -398,27 +400,27 @@ committed twice. That distinction is the entire concurrency story.
 Deliberately **not** extracted, because each is authority or policy
 rather than ledger mechanics:
 
-- **Authorization.** the origin product's `Store` takes an `access.Principal` on
+- **Authorization.** The origin product's `Store` takes a principal on
   every write and checks a tier or a role. The shared ledger has no
   caller and no opinion: a route mounted without a guard is the product's
-  bug. the origin product keeps a thin authorizing wrapper over `Ops` that
+  bug. The origin product keeps a thin authorizing wrapper over `Ops` that
   preserves its current method signatures exactly.
 - **`Allocate` / `Reclaim`**, which are `Transfer` plus a membership check.
 - **`Fund` / `Unwind`**, whose whole rationale is the circularity of
   deriving membership inside the request that creates a project.
-- **Pricing.** `price.go`, `coverage.go`, `Card`, `Rates`, `Preference`.
-  a gateway has its own rate card and the two must not be merged.
+- **Pricing.** Rate cards, coverage, and preference resolution. The gateway
+  has its own rate card and the two must not be merged.
 - **Notification.** The freeze email on a zero crossing. `Reverse`
   returns `Effect`; the product decides what a crossing means.
 
 ## Tests
 
 - `ledgertest.RunStoreContract` run against the memory store in the unit
-  suite and against real Postgres when `DATABASE_URL` is set, mirroring
+  suite and against real Postgres when `TEST_DATABASE_URL` is set, mirroring
   the origin product's existing arrangement.
 - Concurrency: N goroutines holding against one holder admit exactly
   `floor(balance / reserve)` of them and the rest get `ErrInsufficient`
-  (the origin product's `concurrent_test.go`, generalised).
+  (the origin product's concurrency suite, generalised).
 - Exactly-once: concurrent settles of one group produce one debit.
 - Idempotency: the same ref twice moves the balance once; a reversal
   dedupes on its own ref independently of the purchase's.

@@ -2,11 +2,11 @@
 
 How this component is built. One spec per package, tightly scoped.
 
-The **cross-repo migration** that created `pay` (deleting the dead
-billing scaffolding from auth and agents, migrating the origin product onto the
-shared ledger, and building The gateway's credits lane) lives in the private
-`the internal planning repo` repo under ``. It is not duplicated
-here: that work changes other repos, this directory describes this one.
+The **cross-repo migration** that created `pay` (retiring unused billing
+scaffolding elsewhere, moving the origin product onto the shared ledger, and
+building the gateway's credits lane) is tracked outside this repository. It is
+not duplicated here: that work changes other codebases, this directory
+describes this one.
 
 ## Contents
 
@@ -25,15 +25,15 @@ and rejected.
 
 ## Prior art
 
-a sibling service built a complete Stripe integration and never drove it
-end to end; it was removed unused in August 2026. Nothing of it is
-carried here verbatim. What it worked out that was worth keeping is
-written into these specs in this repo's own terms: the test harness and
-the API-version posture in 003, the account settings and the async-payment
-event pair in 005.
+A second Stripe integration was written elsewhere and never driven end to end;
+it was removed unused in August 2026. Nothing of it is carried here verbatim.
+What it worked out that was worth keeping is written into these specs in this
+repo's own terms: the test harness and the API-version posture in 003, and the
+account settings and async-payment event pair now written up in
+[`../docs/stripe-operations.md`](../docs/stripe-operations.md).
 
-The one integration in the family that has taken a payment is
-the origin product's. Where it and any other source disagree, it wins.
+The one integration that has actually taken a payment is the origin product's.
+Where it and any other source disagree, it wins.
 
 ## Decisions of record
 

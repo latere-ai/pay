@@ -7,7 +7,7 @@ effort: small
 created: 2026-08-22
 updated: 2026-08-22
 author: changkun
-trigger: Payment and ledger both need one amount type, one currency vocabulary, and one rounding rule. the origin product carries `credit.Micro`/`credit.Dollar` and `payment.Currency` as separate untyped ideas, and a gateway computes cost as `float64` USD-per-million before storing `cost_usd_micro int64`. Two products, three unit conventions, and a documented `-1` sentinel on the a gateway side that a signed ledger would read as a credit. Fix the unit before building anything on top of it.
+trigger: Payment and ledger both need one amount type, one currency vocabulary, and one rounding rule. The origin product carries `credit.Micro`/`credit.Dollar` and `payment.Currency` as separate untyped ideas, and the gateway computes cost as `float64` USD-per-million before storing `cost_usd_micro int64`. Two products, three unit conventions, and a documented `-1` sentinel on the gateway side that a signed ledger would read as a credit. Fix the unit before building anything on top of it.
 ---
 
 # money
@@ -29,7 +29,7 @@ hot path.
 thing raw `int64` cannot: the compiler refuses to add cents to
 micro-USD, or a per-million rate to an amount. Those are exactly the
 two mistakes that are invisible in review and expensive in production.
-a gateway already proves the hazard: `internal/rates/rates.go` returns
+The gateway already proves the hazard: its rate lookup returns
 `cost_usd_micro = -1` for an unpriced model, a magic value that is safe
 only because today's consumer is a counter that filters it. A signed
 ledger would read it as a one-micro credit.
@@ -80,7 +80,7 @@ func FromMinor(n int64, c Currency) Micro
 
 // FromUSD converts a float USD amount, rounding away from zero. It is
 // the one sanctioned float boundary, for rate cards that are quoted as
-// floats (the gateway's `internal/rates`). Negative input is an error rather
+// floats (the gateway's rate card). Negative input is an error rather
 // than a negative amount: a cost is a magnitude, and the gateway's -1 sentinel
 // must not silently become a credit.
 func FromUSD(f float64) (Micro, error)
@@ -135,10 +135,10 @@ $$
 \text{credited} = \max\!\left(0,\; \text{gross} - \left\lfloor \frac{\text{gross} \cdot \text{bps} + 5000}{10^4} \right\rfloor - \text{fixed}\right)
 $$
 
-The percentage cut rounds half up. It is lifted verbatim from
-`the origin product/internal/platform.Settings.Credited`, whose behaviour is
-already covered by `TestCreditedAppliesTheSpread`, so the extraction is
-provably equivalent.
+The percentage cut rounds half up. It is lifted verbatim from the origin
+product's settings-level spread calculation, whose behaviour is already
+covered there by a test the extraction reproduces assertion for assertion, so
+the two are provably equivalent.
 
 The *values* (`Bps`, `FixedMicro`, and the minimum purchase) are policy
 and stay in each product's settings store. Only the arithmetic moves.
