@@ -242,15 +242,15 @@ func TestCreateCheckout_AutomaticTaxOnlyWhenTheDeploymentHasIt(t *testing.T) {
 func TestCreateCheckout_NamesTheLineItemWhenThereIsNoDescription(t *testing.T) {
 	s := newStub(t)
 	s.json(http.MethodPost, sessionsPath, sessionCreated)
-	a := newAdapter(t, s, func(c *Config) { c.ProductName = "lux credits" })
+	a := newAdapter(t, s, func(c *Config) { c.ProductName = "acme credits" })
 
 	p := topUp()
 	p.Description = ""
 	if _, err := a.CreateCheckout(context.Background(), p); err != nil {
 		t.Fatalf("CreateCheckout: %v", err)
 	}
-	if got := s.calledOnce(http.MethodPost, sessionsPath).form.Get("line_items[0][price_data][product_data][name]"); got != "lux credits" {
-		t.Errorf("product_data[name] = %q, want lux credits", got)
+	if got := s.calledOnce(http.MethodPost, sessionsPath).form.Get("line_items[0][price_data][product_data][name]"); got != "acme credits" {
+		t.Errorf("product_data[name] = %q, want acme credits", got)
 	}
 }
 

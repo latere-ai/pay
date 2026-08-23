@@ -7,7 +7,7 @@ effort: small
 created: 2026-08-22
 updated: 2026-08-22
 author: changkun
-trigger: Payment and ledger both need one amount type, one currency vocabulary, and one rounding rule. replichai carries `credit.Micro`/`credit.Dollar` and `payment.Currency` as separate untyped ideas, and lux computes cost as `float64` USD-per-million before storing `cost_usd_micro int64`. Two products, three unit conventions, and a documented `-1` sentinel on the lux side that a signed ledger would read as a credit. Fix the unit before building anything on top of it.
+trigger: Payment and ledger both need one amount type, one currency vocabulary, and one rounding rule. the origin product carries `credit.Micro`/`credit.Dollar` and `payment.Currency` as separate untyped ideas, and a gateway computes cost as `float64` USD-per-million before storing `cost_usd_micro int64`. Two products, three unit conventions, and a documented `-1` sentinel on the a gateway side that a signed ledger would read as a credit. Fix the unit before building anything on top of it.
 ---
 
 # money
@@ -29,7 +29,7 @@ hot path.
 thing raw `int64` cannot: the compiler refuses to add cents to
 micro-USD, or a per-million rate to an amount. Those are exactly the
 two mistakes that are invisible in review and expensive in production.
-lux already proves the hazard: `internal/rates/rates.go` returns
+a gateway already proves the hazard: `internal/rates/rates.go` returns
 `cost_usd_micro = -1` for an unpriced model, a magic value that is safe
 only because today's consumer is a counter that filters it. A signed
 ledger would read it as a one-micro credit.
@@ -80,8 +80,8 @@ func FromMinor(n int64, c Currency) Micro
 
 // FromUSD converts a float USD amount, rounding away from zero. It is
 // the one sanctioned float boundary, for rate cards that are quoted as
-// floats (lux's `internal/rates`). Negative input is an error rather
-// than a negative amount: a cost is a magnitude, and lux's -1 sentinel
+// floats (the gateway's `internal/rates`). Negative input is an error rather
+// than a negative amount: a cost is a magnitude, and the gateway's -1 sentinel
 // must not silently become a credit.
 func FromUSD(f float64) (Micro, error)
 
@@ -136,7 +136,7 @@ $$
 $$
 
 The percentage cut rounds half up. It is lifted verbatim from
-`replichai/internal/platform.Settings.Credited`, whose behaviour is
+`the origin product/internal/platform.Settings.Credited`, whose behaviour is
 already covered by `TestCreditedAppliesTheSpread`, so the extraction is
 provably equivalent.
 
@@ -149,7 +149,7 @@ and stay in each product's settings store. Only the arithmetic moves.
   including the boundaries: 0, 1 micro, 9,999 micros, exactly one cent.
 - `FromUSD` refuses negatives and NaN/Inf, and rounds `0.0000001` up to
   1 micro rather than down to 0.
-- `Spread.Credited` reproduces replichai's existing assertions exactly,
+- `Spread.Credited` reproduces the origin product's existing assertions exactly,
   plus: zero spread credits the gross, a purchase below the fixed cut
   credits zero and never a negative.
 - A fuzz test on `FromUSD` and on `String` (both take unconstrained

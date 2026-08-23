@@ -7,21 +7,21 @@ effort: medium
 created: 2026-08-22
 updated: 2026-08-22
 author: changkun
-trigger: replichai is the only Stripe integration in the family that has ever taken a payment. auth shipped a second one that was never used end to end and is being deleted. The adapter is built on the proven one, with the shapes the unproven one worked out carried over as design and proven here for the first time.
+trigger: the origin product is the only Stripe integration in the family that has ever taken a payment. auth shipped a second one that was never used end to end and is being deleted. The adapter is built on the proven one, with the shapes the unproven one worked out carried over as design and proven here for the first time.
 ---
 
 # pay/stripe
 
 ## One proven integration, one design reference
 
-**replichai is the only Stripe integration in the family that has ever
+**the origin product is the only Stripe integration in the family that has ever
 taken a payment.** auth shipped a second one, on stripe-go v85, that was
 never used end to end; its code is deleted by
 [pay-02](pay-02-remove-dead-billing.md). What survives from it is design,
 and it is labelled as such below because unproven code that reads as
 proven is how a bug gets inherited with confidence.
 
-| Capability | replichai (v82, **in production**) | auth (v85, **never used**, deleted) |
+| Capability | the origin product (v82, **in production**) | auth (v85, **never used**, deleted) |
 |---|---|---|
 | Checkout mode | payment, one-off top-up | subscription |
 | Save a method | no | setup-mode session |
@@ -35,11 +35,11 @@ proven is how a bug gets inherited with confidence.
 | Meter push (postpaid) | not applicable | yes, with a `SKIP LOCKED` outbox |
 | Coverage | 57.7%, `CreateCheckout` untested | 100%, via an httptest stub |
 
-Read that last row carefully. auth's 100% measures tests against a stub,
+Read that last row carefully. the second implementation's 100% measures tests against a stub,
 not behaviour against Stripe. It is evidence the *harness* works, not
 that the *adapter* does.
 
-## Requirements from replichai, which are load-bearing
+## Requirements from the origin product, which are load-bearing
 
 Three behaviors learned from production failures. Each needs a regression
 test named for the failure it prevents.
@@ -67,7 +67,7 @@ test named for the failure it prevents.
 
 ## Requirements with no proven implementation behind them
 
-These come from auth's integration, which was written carefully and never
+These come from the second implementation's integration, which was written carefully and never
 ran against a real payment. Nothing is copied; each is a requirement to
 be built here and proven here for the first time. They are separated from
 the section above precisely so nobody mistakes a good idea for a tested
@@ -76,7 +76,7 @@ one.
 - **The httptest harness.** `stripe-go` allows replacing the backend with
   one built over a custom `http.Client`, so tests point at an
   `httptest.Server` returning recorded payloads. This is the single most
-  valuable thing auth's billing produced: it is what makes a 95% floor
+  valuable thing the second implementation's billing produced: it is what makes a 95% floor
   reachable on a vendor adapter, and it covers request shaping including
   the nested form encoding for `line_items[0][price_data][...]`, the part
   most likely to break silently on an SDK bump.
@@ -86,12 +86,12 @@ one.
   crediting. A bad signature still fails closed. Both implementations
   arrived at this independently, which is the strongest available signal
   that it is load-bearing.
-- **A webhook-replay table.** replichai leans entirely on the ledger's
+- **A webhook-replay table.** the origin product leans entirely on the ledger's
   unique index, correct for a credit but silent for an event that is not
   a ledger write. Carry the table so a replayed non-crediting event is
   also a no-op and an operator can retry a failed delivery.
 - **Setup-mode sessions, the portal, and customer creation.** The shapes
-  replichai never needed and auto-recharge does.
+  the origin product never needed and auto-recharge does.
 - **A `SKIP LOCKED` outbox.** Not needed now (there is no meter push any
   more) but the right pattern if postpaid metering returns.
 
@@ -102,7 +102,7 @@ one.
   maps to `pay.ErrDeclined` and must never be retried; `requires_action`
   maps to `ChargePending` with a webhook to follow. Auto-recharge runs on
   this, and neither implementation has it.
-- **Idempotency keys** on every mutating call. replichai has none, which
+- **Idempotency keys** on every mutating call. the origin product has none, which
   is fine when a human clicks once and not fine when a daemon retries.
 - **`ParseWebhook(payload, http.Header)`**: reads `Stripe-Signature` from
   the header set rather than a bare string, which is where the
@@ -112,7 +112,7 @@ one.
 
 ## Version
 
-Pin **stripe-go v85**. replichai moves forward from v82; nothing in its
+Pin **stripe-go v85**. the origin product moves forward from v82; nothing in its
 adapter depends on v82 specifics.
 
 ## Webhook signature
@@ -196,7 +196,7 @@ no global mutation.
 
 ### Where the two references disagreed
 
-- **Which refund a `charge.refunded` is about.** replichai takes
+- **Which refund a `charge.refunded` is about.** the origin product takes
   `refunds.data[n-1]`. Stripe returns list objects newest-first, so that
   is the *oldest* refund: a second partial refund would re-emit a
   reference the ledger already posted and the clawback would vanish into

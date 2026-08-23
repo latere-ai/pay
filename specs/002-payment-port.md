@@ -7,7 +7,7 @@ effort: medium
 created: 2026-08-22
 updated: 2026-08-22
 author: changkun
-trigger: replichai's `internal/payment` is already the right abstraction (100% covered, Stripe named in exactly one place downstream of it) but it is private to one product, and its shape assumes a human clicking a hosted checkout once. A credits product needs auto-recharge, which means a saved payment method and an off-session charge, and retrofitting that into `Provider` later breaks every consumer. Extract the port now, with the shape that survives PayPal and a merchant of record.
+trigger: the origin product's `internal/payment` is already the right abstraction (100% covered, Stripe named in exactly one place downstream of it) but it is private to one product, and its shape assumes a human clicking a hosted checkout once. A credits product needs auto-recharge, which means a saved payment method and an off-session charge, and retrofitting that into `Provider` later breaks every consumer. Extract the port now, with the shape that survives PayPal and a merchant of record.
 ---
 
 # payment
@@ -26,14 +26,14 @@ processor SDK. That separation is not cosmetic. Measured on the two live
 integrations:
 
 ```
-replichai internal/payment           coverage: 100.0% of statements
-replichai internal/payment/stripe    coverage:  57.7% of statements
-auth      internal/billing/stripeapi coverage: 100.0% of statements
+port      100.0% of statements
+adapter A  57.7% of statements   (checkout untested)
+adapter B 100.0% of statements   (httptest stub over the SDK backend)
 ```
 
 The port is trivially coverable. A checkout-shaped adapter is not,
 because most of it is vendor edge cases that only run against Stripe.
-auth's client reaches 100% only because it is tested through an httptest
+the second implementation's client reaches 100% only because it is tested through an httptest
 stub against the stripe-go backend, which is the technique spec 003
 adopts for all of it.
 
@@ -42,7 +42,7 @@ adopts for all of it.
 ```mermaid
 sequenceDiagram
     participant P as Person
-    participant App as Product (lux, replichai)
+    participant App as Your product
     participant Port as pay
     participant Proc as Processor (Stripe)
     participant L as pay/ledger
@@ -166,7 +166,7 @@ type CheckoutParams struct {
     // the credited amount reaches the webhook without being recomputed.
     Meta map[string]string
     // IdempotencyKey makes a retried create return the same session
-    // rather than a second one. replichai has none, which is fine when a
+    // rather than a second one. the origin product has none, which is fine when a
     // human clicks once and not fine when a recharge daemon retries.
     IdempotencyKey string
     // Tax says how the charge is taxed. TaxNone keeps the charge equal to
@@ -301,7 +301,7 @@ func WebhookHandler(p Provider, fn EventFunc, opts ...HandlerOption) http.Handle
 
 ### The fake
 
-`MemProvider` keeps replichai's shape and grows with the port: it
+`MemProvider` keeps the origin product's shape and grows with the port: it
 records every call for assertions, accepts a JSON-encoded `Event` as a
 webhook payload when the signature header matches, and can be
 configured to declare or withhold any capability, so a consumer can test
@@ -313,7 +313,7 @@ processor.
 1. **Nothing in this package names a vendor.** `Name` holds identifiers,
    not behaviour. The one permitted vendor-shaped field is `Event.Raw`.
 2. **No application policy.** The port never emails, never freezes an
-   account, never decides what a purchase is worth. replichai's
+   account, never decides what a purchase is worth. the origin product's
    `reversePurchase` reads the balance before, reverses, then notifies on
    the zero crossing; the crossing detection and the mail are the app's,
    and the ledger's `Reverse` returns before/after so the app can decide

@@ -11,9 +11,10 @@ import (
 )
 
 // Three regressions, each named for the failure it prevents. They come from
-// replichai, the only Stripe integration in this family that has ever taken a
+// the only Stripe integration this port was extracted from that has taken a
 // real payment, and each was learned in production rather than reasoned out.
-// See specs/003-stripe-adapter.md, "Requirements from replichai".
+// See specs/003-stripe-adapter.md, "Requirements with a proven
+// implementation behind them".
 
 // TestRegression_ManagedPaymentsLeftOnOverchargesTheCustomer pins the one
 // parameter that decides whether a customer pays what the app quoted.

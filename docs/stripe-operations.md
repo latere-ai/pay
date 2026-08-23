@@ -1,15 +1,8 @@
----
-title: Running the Stripe account
-status: drafted
-repo: latere-ai/pay
-effort: small
-created: 2026-08-22
-updated: 2026-08-22
-author: changkun
-trigger: The adapter is code; a working integration is also an account configured correctly. Getting the webhook event list, the presentment settings or the test-mode loop wrong produces silent undercharging or a wallet that never credits, and neither shows up in a unit test.
----
+# Running Stripe
 
-# Running the Stripe account
+An operator's guide. The adapter is code; a working integration is also an
+account configured correctly, and the settings below change what a customer is
+actually charged.
 
 What an operator sets up, and what a developer runs locally. Written for
 this component's surface: **one-off top-ups, refunds, and a saved method

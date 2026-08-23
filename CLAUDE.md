@@ -1,6 +1,6 @@
 - Respond short, precise, and concise.
 - If you didn't add a test, you didn't fix a bug. Every bug fix must include a reproducible test that fails without the fix and passes with it.
-- Specs live in specs/. Cross-repo work belongs in the private latere-ai/specs repo under infrastructure/pay, not here.
+- Specs live in specs/. Cross-repo work belongs in the private the internal planning repo repo under the internal planning repo, not here.
 - You commit frequently, one small scope diff at a time. Push to main once a batch is complete and verified.
 - Coverage floor is 95%, enforced by `make cover`. The Postgres half needs TEST_DATABASE_URL; a database-free run silently skips it.
 - This is the money component. Amounts are int64 micro-USD, never floats. A write API takes an unsigned magnitude and applies the sign itself.

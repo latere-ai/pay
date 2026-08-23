@@ -1,81 +1,157 @@
 # pay
 
-Latere's finance component. One repository for money: the vendor-neutral
-payment port, its processor adapters, and the credit ledger.
+[![CI](https://github.com/latere-ai/pay/actions/workflows/ci.yml/badge.svg)](https://github.com/latere-ai/pay/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/latere.ai/x/pay.svg)](https://pkg.go.dev/latere.ai/x/pay)
+[![Go Report Card](https://goreportcard.com/badge/latere.ai/x/pay)](https://goreportcard.com/report/latere.ai/x/pay)
+[![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)](#testing)
+[![Go](https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Every product that takes a payment or holds a balance imports this. No
-product implements any of it twice.
+**Sell credit, hold a balance, and spend it, in Go.**
+
+Two halves that work together or apart: a **payment port** for taking money
+without hard-wiring a processor, and a **credit ledger** whose balances are
+folded from an append-only history rather than stored.
+
+```bash
+go get latere.ai/x/pay
+```
+
+## Why
+
+Most products that sell credit end up writing the same four things: a checkout
+call, a webhook whose status codes are subtly wrong, a balance column that
+drifts from its history, and a refund path nobody tested. Each is easy to get
+almost right.
+
+This library is the version that has been got wrong already and fixed.
+
+- A **webhook handler** with the status codes pinned, because returning the
+  wrong one either loses a purchase or credits it twice.
+- A **balance that cannot drift**, because it is never stored.
+- **Holds**, so a burst of concurrent requests cannot each spend the same money.
+- **Exactly-once settlement**, enforced by the database rather than by
+  remembering.
+- **Idempotency on every write**, so a replayed delivery moves a balance once.
+
+## Quick start
+
+Sell $20 of credit and put it in a wallet:
 
 ```go
-import (
-    "latere.ai/x/pay"                    // Provider, Event, CheckoutParams
-    "latere.ai/x/pay/money"              // Micro, Currency, Spread
-    "latere.ai/x/pay/ledger"             // Store, Ops, Holder
-    "latere.ai/x/pay/ledger/pgledger"    // the Postgres store
-    "latere.ai/x/pay/stripe"             // an adapter, at a composition root only
-)
+processor := stripe.New(stripe.Config{
+    SecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
+    WebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
+})
+book := pgledger.New(pool)
+
+// Quote the cut before the redirect, and carry what it credits on the session.
+spread := money.Spread{Bps: 500, FixedMicro: 30 * money.Cent}
+gross := 20 * money.Dollar
+credited := spread.Credited(gross) // $18.70
+
+out, err := processor.CreateCheckout(ctx, pay.CheckoutParams{
+    Email:      user.Email,
+    Amount:     gross,
+    Currency:   money.USD,
+    SuccessURL: "https://example.com/wallet?ok=1",
+    CancelURL:  "https://example.com/wallet",
+    Meta:       map[string]string{"credited": strconv.FormatInt(int64(credited), 10)},
+})
+// redirect the browser to out.URL
 ```
 
-## What it owns
+Then mount the webhook and credit on a verified delivery:
 
-| Concern | Package |
+```go
+mux.Handle("POST /webhooks/stripe", pay.WebhookHandler(processor,
+    func(ctx context.Context, e pay.Event) error {
+        if e.Kind != pay.KindPaid {
+            return nil
+        }
+        amount, _ := strconv.ParseInt(e.Meta["credited"], 10, 64)
+        return book.Credit(ctx, ledger.Posting{
+            Holder: ledger.NewHolder("user", e.Email),
+            Amount: money.Micro(amount),
+            Reason: "topup",
+            Ref:    e.Ref, // idempotent: a replay credits once
+            Actor:  "stripe:" + e.Ref,
+        })
+    }))
+```
+
+That is the whole money-in path. [Getting started](docs/getting-started.md)
+walks through spending it.
+
+## What is in the box
+
+| Package | What it gives you |
 |---|---|
-| The amount type, currency vocabulary, rounding rule, purchase spread | `money` |
-| The payment port: checkout, off-session charge, verified webhooks | root |
-| Processor adapters. Stripe today | `stripe` |
-| The append-only credit ledger: balances as folds, holds, exactly-once settlement | `ledger`, `ledger/pgledger` |
+| [`pay`](https://pkg.go.dev/latere.ai/x/pay) | The processor-agnostic port, the webhook handler, and an in-memory fake |
+| [`pay/money`](https://pkg.go.dev/latere.ai/x/pay/money) | An integer amount type, a currency vocabulary, and one rounding rule |
+| [`pay/ledger`](https://pkg.go.dev/latere.ai/x/pay/ledger) | Balances, holds, transfers, settlement, reversals |
+| [`pay/ledger/pgledger`](https://pkg.go.dev/latere.ai/x/pay/ledger/pgledger) | The Postgres store, and enlistment in *your* transaction |
+| [`pay/stripe`](https://pkg.go.dev/latere.ai/x/pay/stripe) | The Stripe adapter |
+| [`pay/paytest`](https://pkg.go.dev/latere.ai/x/pay/paytest), [`pay/ledger/ledgertest`](https://pkg.go.dev/latere.ai/x/pay/ledger/ledgertest) | Conformance suites, so your own adapter or store is provably correct |
 
-## What it does not own
+## Documentation
 
-**Pricing.** What a token, a pod-second or a page costs is the product's
-business. This repo holds amounts, never rate cards.
+| Guide | For |
+|---|---|
+| [Getting started](docs/getting-started.md) | Selling your first credit, end to end |
+| [The money model](docs/money-model.md) | Why a balance is a fold, and what a hold is for |
+| [Webhooks](docs/webhooks.md) | The delivery contract, and the status codes that matter |
+| [Writing an adapter](docs/adapters.md) | Supporting a processor this library does not |
+| [Running Stripe](docs/stripe-operations.md) | The account settings that change what a customer is charged |
 
-**Metering.** Products count what they used and report an amount.
+API reference lives on [pkg.go.dev](https://pkg.go.dev/latere.ai/x/pay).
 
-**Authorization.** It takes a holder key and an amount and has no opinion
-about who may spend. Auth remains the identity provider.
+## Design in one paragraph
 
-**Notification and policy.** `Reverse` returns before-and-after balances;
-what a zero crossing *means* is the product's decision.
+Amounts are `int64` micro-USD, never floats. A write API takes an unsigned
+magnitude and applies the sign itself, so a caller cannot turn a debit into a
+credit by passing a negative. A balance is `SUM(amount)` over an append-only
+table, so it cannot disagree with its own history; a mistake is corrected by
+another entry, never by an update. Holds are excluded from a balance and
+subtracted from what is *available*, which is what stops two concurrent
+requests spending the same money. Every write that an outside system can replay
+is idempotent on that system's reference.
 
-## Shape
+## Testing
 
-A library that products embed. A product holding balances runs
-`pgledger` against **its own database**, so a request never crosses a
-service boundary to ask whether it may spend. There is no finance daemon
-today; see the specs for why, and for where one would land if it is ever
-needed.
-
-## Rules
-
-- Import direction is one way: `stripe` imports the root and `money`;
-  `ledger` imports `money`; `money` imports nothing.
-- Nothing imports `stripe` except a product's `main`.
-- `money` and `ledger` are stdlib-only. `pgx` enters only through
-  `pgledger`; `stripe-go` only through `stripe`.
-
-## Development
-
-```
-make test        # go test
-make race        # go test -race
-make cover       # coverage, 95% floor enforced
-make fuzz        # fuzz targets, 30s
+```bash
+make test    # unit
+make race    # with the race detector
+make cover   # 95% floor, enforced
+make fuzz    # every fuzz target, 30s each
 ```
 
-The Postgres half of the ledger contract needs a database:
+The ledger's Postgres half needs a database. Without one it is **silently
+skipped**, which is how a ledger can look far less proven than it is:
 
+```bash
+TEST_DATABASE_URL='postgres://…' make cover
 ```
-TEST_DATABASE_URL=postgres://... make test
-```
 
-A database-free run silently skips it, which is how a ledger can look
-far less covered than it is.
+Both conformance suites are exported. If you write a processor adapter, run
+`paytest.RunProviderContract` against it; if you write a ledger store, run
+`ledgertest.RunStoreContract`. They found four real bugs in this library's own
+Postgres store before any caller existed.
 
-## Specs
+## Status
 
-[`specs/`](specs/). The cross-repo migration that created this component
-lives in the private `latere-ai/specs` repo under `infrastructure/pay`.
+Used in production by [Latere](https://latere.ai). The API is not frozen: it is
+`v0.x` and will change where the design turns out wrong. Breaking changes get a
+minor bump and a note in the release.
+
+## Contributing
+
+Issues and pull requests welcome.
+
+A bug fix wants a test that fails without it. CI enforces a coverage floor; if
+you hit a line that genuinely cannot be tested, mention it in the pull request
+and we will work out whether it wants a different shape rather than a lower
+gate.
 
 ## License
 
