@@ -1,6 +1,6 @@
 - Respond short, precise, and concise.
 - If you didn't add a test, you didn't fix a bug. Every bug fix must include a reproducible test that fails without the fix and passes with it.
-- Specs live in specs/. Cross-repo work belongs in the private the internal planning repo repo under the internal planning repo, not here.
+- specs/ is the internal design record: why the shape is what it is, and what was tried and rejected. docs/ is audience-facing, written for someone using the library. Keep the two voices separate.
 - You commit frequently, one small scope diff at a time. Push to main once a batch is complete and verified.
 - Coverage floor is 95%, enforced by `make cover`. The Postgres half needs TEST_DATABASE_URL; a database-free run silently skips it.
 - This is the money component. Amounts are int64 micro-USD, never floats. A write API takes an unsigned magnitude and applies the sign itself.
