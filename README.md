@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/latere-ai/pay/actions/workflows/ci.yml/badge.svg)](https://github.com/latere-ai/pay/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/latere.ai/x/pay.svg)](https://pkg.go.dev/latere.ai/x/pay)
-[![Go Report Card](https://goreportcard.com/badge/latere.ai/x/pay)](https://goreportcard.com/report/latere.ai/x/pay)
 [![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)](#testing)
 [![Go](https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
