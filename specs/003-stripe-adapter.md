@@ -38,7 +38,7 @@ Read that last row carefully. the second implementation's 100% measures tests ag
 not behaviour against Stripe. It is evidence the *harness* works, not
 that the *adapter* does.
 
-## Requirements from the origin product, which are load-bearing
+## Requirements learned in production, which are load-bearing
 
 Three behaviors learned from production failures. Each needs a regression
 test named for the failure it prevents.
