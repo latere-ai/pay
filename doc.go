@@ -10,5 +10,6 @@
 // Nothing here knows a ledger exists: a product wires an Event to a ledger
 // write.
 //
-// See specs/002-payment-port.md.
+// See docs/getting-started.md for the end-to-end path and docs/webhooks.md
+// for the delivery contract.
 package pay

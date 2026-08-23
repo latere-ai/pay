@@ -7,7 +7,8 @@
 // Stripe configuration rather than code, and the USD a converted charge is
 // actually worth arrives on the session as currency_conversion.
 //
-// See specs/003-stripe-adapter.md and specs/005-stripe-operations.md.
+// See docs/stripe-operations.md for the account settings this adapter
+// assumes, and docs/adapters.md for writing a sibling.
 package stripe
 
 import (
@@ -105,7 +106,7 @@ var _ pay.Provider = (*Adapter)(nil)
 //
 // It never returns nil. With no keys the result refuses every operation with
 // pay.ErrUnconfigured, which is the default deployment posture in
-// specs/005-stripe-operations.md: the service boots and nothing sells.
+// docs/stripe-operations.md: the service boots and nothing sells.
 func New(c Config) *Adapter {
 	if c.SecretKey == "" || c.WebhookSecret == "" {
 		return &Adapter{}

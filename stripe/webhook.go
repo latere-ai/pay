@@ -18,7 +18,7 @@ import (
 const signatureHeader = "Stripe-Signature"
 
 // The event types this adapter models. Exactly the list an operator subscribes
-// the endpoint to in specs/005-stripe-operations.md; anything else reduces to
+// the endpoint to in docs/stripe-operations.md; anything else reduces to
 // pay.KindIgnored so an unexpected delivery is acknowledged rather than retried
 // forever.
 const (

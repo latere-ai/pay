@@ -7,7 +7,7 @@
 // "why does this holder have this much?" is the rows themselves, each naming
 // its actor and its cause.
 //
-// See specs/004-credit-ledger.md.
+// See docs/money-model.md.
 package ledger
 
 import (

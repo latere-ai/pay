@@ -13,8 +13,8 @@ import (
 // Three regressions, each named for the failure it prevents. They come from
 // the only Stripe integration this port was extracted from that has taken a
 // real payment, and each was learned in production rather than reasoned out.
-// See specs/003-stripe-adapter.md, "Requirements with a proven
-// implementation behind them".
+// See specs/003-stripe-adapter.md, "Requirements from the origin product,
+// which are load-bearing".
 
 // TestRegression_ManagedPaymentsLeftOnOverchargesTheCustomer pins the one
 // parameter that decides whether a customer pays what the app quoted.
