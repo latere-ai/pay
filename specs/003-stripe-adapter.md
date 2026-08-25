@@ -38,7 +38,7 @@ Read that last row carefully. the second implementation's 100% measures tests ag
 not behaviour against Stripe. It is evidence the *harness* works, not
 that the *adapter* does.
 
-## Requirements learned in production, which are load-bearing
+## Requirements learned in production
 
 Three behaviors learned from production failures. Each needs a regression
 test named for the failure it prevents.
@@ -84,7 +84,7 @@ one.
   endpoint on a different API version than the pinned SDK must not crash
   crediting. A bad signature still fails closed. Both implementations
   arrived at this independently, which is the strongest available signal
-  that it is load-bearing.
+  that it is required.
 - **A webhook-replay table.** The origin product leans entirely on the ledger's
   unique index, correct for a credit but silent for an event that is not
   a ledger write. Carry the table so a replayed non-crediting event is
