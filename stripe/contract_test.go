@@ -1,7 +1,7 @@
 package stripe
 
 import (
-	"fmt"
+	"bytes"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -192,7 +192,7 @@ func FuzzParseWebhook(f *testing.F) {
 		if ev.Provider != pay.Stripe {
 			t.Fatalf("Provider = %q", ev.Provider)
 		}
-		if fmt.Sprint(ev.Raw) != fmt.Sprint(payload) {
+		if !bytes.Equal(ev.Raw, payload) {
 			t.Fatal("Raw is not the verified payload")
 		}
 	})

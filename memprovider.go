@@ -167,6 +167,15 @@ func (m *MemProvider) mint(prefix string) string {
 // MemEvent builds the JSON payload a MemProvider's ParseWebhook accepts, so a
 // test does not hand-roll the encoding.
 func MemEvent(kind Kind, ref string, gross money.Micro, meta map[string]string) []byte {
-	b, _ := json.Marshal(Event{Kind: kind, Ref: ref, Gross: gross, Meta: meta})
+	b, err := json.Marshal(Event{Kind: kind, Ref: ref, Gross: gross, Meta: meta})
+	if err != nil {
+		// Event is strings, integers, a string map and a byte slice, so this
+		// is unreachable today. It panics rather than returning the empty
+		// slice the discarded error used to leave behind: a field added later
+		// that does not encode would otherwise turn every caller's payload
+		// into one ParseWebhook rejects, and the rejection would name the
+		// wrong cause.
+		panic("pay: MemEvent: " + err.Error())
+	}
 	return b
 }

@@ -97,7 +97,7 @@ func constructError(err error) error {
 		webhook.ErrTooOld,
 	} {
 		if errors.Is(err, sig) {
-			return fmt.Errorf("pay/stripe: %w: %v", pay.ErrBadSignature, err)
+			return fmt.Errorf("pay/stripe: %w: %w", pay.ErrBadSignature, err)
 		}
 	}
 	return fmt.Errorf("pay/stripe: decode delivery: %w", err)

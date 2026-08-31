@@ -288,7 +288,7 @@ func TestAnUnknownCurrencyCannotForgeASign(t *testing.T) {
 		{"-", -69, "-0.000069"},
 	}
 	for _, tc := range cases {
-		got := Micro(tc.m).String(tc.cur)
+		got := tc.m.String(tc.cur)
 		if got != tc.want {
 			t.Errorf("Micro(%d).String(%q) = %q, want %q", tc.m, tc.cur, got, tc.want)
 		}
