@@ -1,23 +1,48 @@
-.PHONY: test race cover cover-html fuzz lint lint-modernize tidy fmt fmt-check hooks
+# The verification contract for pay.
+#
+# Every target here is one latere-ai/ci's go-verify workflow probes for and
+# runs, so `make <target>` on a laptop is the same check the runner performs.
+# The gates themselves live in latere.ai/x/ci-gate, pinned in go.mod; what
+# each one asserts for this repository is in .lateregate.yaml.
 
 COVER_MIN := 95
 
+.PHONY: all test test-race test-hermetic cover cover-html fuzz fmt fmt-check lint lint-config lint-modernize spec-lint validate no-vendor-leak tidy hooks
+
+all: fmt-check lint test cover spec-lint validate
+
+# vet before test, because a vet finding is a fact about the code that does
+# not need the suite to run to be true.
 test:
+	go vet ./...
 	go test ./...
 
-race:
+# The suite under the race detector. The ledger is written for concurrent
+# holders, so this is the target that exercises the claim.
+test-race:
 	go test -race ./...
 
+# The suite with only the Go toolchain on PATH. A test that depends on what
+# happens to be installed passes locally and fails on a runner.
+test-hermetic:
+	@go tool lateregate hermetic
+
 # COVER_PKGS is every package whose statements the floor applies to: ./... minus
-# the two conformance suites, paytest and ledgertest.
+# the two conformance suites, paytest and ledgertest, and minus pgledger.
 #
-# Those are test-support. Most of their remaining statements are t.Errorf calls
-# that run only when the implementation under test is broken, and reaching them
-# would mean faking a *testing.T rather than testing anything real. Their logic
-# is exercised on every single run -- by this repo's own stores and adapters,
-# and by each consumer's -- so they are covered in the sense that matters, just
-# not in the sense a statement counter measures.
-COVER_PKGS = $(shell go list ./... | grep -Ev '/(paytest|ledgertest)$$' | paste -sd, -)
+# paytest and ledgertest are test-support. Most of their remaining statements
+# are t.Errorf calls that run only when the implementation under test is
+# broken, and reaching them would mean faking a *testing.T rather than testing
+# anything real. Their logic is exercised on every single run -- by this repo's
+# own stores and adapters, and by each consumer's -- so they are covered in the
+# sense that matters, just not in the sense a statement counter measures.
+#
+# pgledger is out for a different reason: every statement in it needs a
+# Postgres server, and its tests skip without TEST_DATABASE_URL. Leaving it in
+# would make this floor a measure of whether a database happened to be
+# reachable. The Postgres suite runs with a real server in this repository's
+# own postgres job, which is the only place that can host one.
+COVER_PKGS = $(shell go list ./... | grep -Ev '/(paytest|ledgertest|pgledger)$$' | paste -sd, -)
 
 cover:
 	go test -coverprofile=coverage.out -coverpkg=$(COVER_PKGS) ./...
@@ -34,6 +59,8 @@ cover:
 cover-html: cover
 	go tool cover -html=coverage.out
 
+# The seed corpus and a short campaign per target: a regression gate over the
+# inputs that have already found a bug, not a fuzzing run.
 fuzz:
 	@for pkg in $$(go list ./...); do \
 	  for f in $$(go test -list 'Fuzz.*' $$pkg 2>/dev/null | grep '^Fuzz' || true); do \
@@ -41,42 +68,53 @@ fuzz:
 	  done; \
 	done
 
-lint: lint-modernize
-	go vet ./...
-	gofmt -l .
-
-# lint-modernize fails on code that a standard library call already covers.
-# It runs the toolchain modernizers, which overlap golangci-lint's modernize
-# linter but add three it does not carry: buildtag, hostport, and the
-# go:fix inline directives. newexpr and errorsastype are off for the reasons
-# recorded in .golangci.yml.
-# Only a non-empty patch fails the target. go fix also exits non-zero when a
-# package does not type-check, which is a build error rather than a finding,
-# so stderr is dropped and the decision rests on the patch alone.
-lint-modernize:
-	@for fixer in newexpr errorsastype; do \
-		go tool fix help 2>&1 | grep -q "^    $$fixer " || { \
-			echo "go fix no longer carries the $$fixer fixer, so -$$fixer=false is rejected and this check passes silently"; \
-			exit 1; \
-		}; \
-	done
-	@patch=$$(go fix -diff -newexpr=false -errorsastype=false ./... 2>/dev/null); \
-	if [ -n "$$patch" ]; then \
-		echo "$$patch"; \
-		echo "go fix: the diff above is already in the standard library; apply it with go fix"; \
-		exit 1; \
-	fi
-
-tidy:
-	go mod tidy
-
-# fmt formats all Go sources in place.
 fmt:
 	gofmt -w .
 
-# fmt-check fails if any Go source is not gofmt-formatted.
 fmt-check:
-	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "gofmt: unformatted files:"; echo "$$out"; exit 1; fi
+	@go tool lateregate fmt-check
+
+# Fails on code a standard library call or a language builtin already covers.
+# Carries fixers golangci-lint's modernize linter does not, so it runs whether
+# or not the linter does.
+lint-modernize:
+	@go tool lateregate modernize
+
+# .golangci.yml is generated and gitignored: golangci-lint has no config
+# inheritance, so the org's set is rendered from latere.ai/x/ci-gate on every
+# run. Regenerating is what makes divergence impossible rather than merely
+# detectable.
+lint-config:
+	@go tool lateregate golangci
+
+GOLANGCI_VERSION ?= v2.13.1
+
+# The linter CI runs, against the config lint-config renders. Without this the
+# only machine that ever lints this repository is a runner.
+lint: lint-config
+	@go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) run ./...
+
+# specs/ records why each package has the shape it has, and specs/README.md
+# carries a status per spec. A table nobody checks disagrees with the code
+# within a milestone.
+spec-lint:
+	@go tool lateregate spec-lint
+
+# The repo-specific check the shared pipeline cannot know about.
+validate: no-vendor-leak
+
+# A vendor SDK reachable from money/ or ledger/ would mean the port is no
+# longer vendor-neutral, which is the one property specs/002-payment-port.md
+# exists to hold. Nothing else here would report it: the build succeeds either
+# way.
+no-vendor-leak:
+	@if go list -deps ./money/... ./ledger/... 2>/dev/null | grep -q 'stripe-go'; then \
+	  echo "a vendor SDK leaked outside stripe/"; exit 1; \
+	fi
+	@echo "no vendor SDK outside the adapter"
+
+tidy:
+	go mod tidy
 
 # hooks installs the repository git hooks (pre-commit gofmt and go fix guards).
 hooks:

@@ -1,0 +1,37 @@
+# The per-push gate configuration for pay. Every check runs from
+# latere.ai/x/ci-gate, pinned in go.mod, so a gate that fails on a runner
+# fails the same way on a laptop.
+
+hermetic:
+  # Nothing besides the Go toolchain. This repository's suite reaches no
+  # system binary: the Stripe adapter is exercised against an in-process fake,
+  # and the Postgres store's tests skip when TEST_DATABASE_URL is unset rather
+  # than shelling out to find a server. The empty list is what keeps that
+  # true, since the first test to reach for psql or curl would fail here.
+  allow: []
+
+modernize:
+  # newexpr rewrites pointer helpers to new(v) and inlines the call sites
+  # unevenly, leaving the helper with no callers and giving an untyped
+  # constant argument the wrong default type. errorsastype rewrites errors.As
+  # to errors.AsType[T], whose type parameter a local non-error interface
+  # target does not satisfy -- the pgx SQLSTATE check in ledger/pgledger is
+  # exactly that shape -- so the rewrite does not compile. lateregate checks
+  # both fixers still exist, because `go fix` rejects an unknown -name=false
+  # and the gate would otherwise pass having run nothing.
+  disable: [newexpr, errorsastype]
+
+spec:
+  dir: specs
+  # One status, because every spec here records a surface that shipped. A
+  # closed vocabulary of one is the strongest form of the check: anything
+  # else in the tree is either a typo or a lifecycle nobody agreed to.
+  status: [implemented]
+  require: [title, status]
+  # specs/README.md carries a row per spec with the status it claims. A
+  # status column that disagrees with the spec is worse than no column,
+  # because a reader trusts it.
+  index: specs/README.md
+  # The specs describe their surfaces in Markdown tables, and a row whose
+  # cell count drifts renders as silently missing columns.
+  tables: true

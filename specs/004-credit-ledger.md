@@ -7,7 +7,15 @@ effort: large
 created: 2026-08-22
 updated: 2026-08-22
 author: changkun
-trigger: the origin product's own credit package is a correct money ledger (balance as a fold, holds excluded from available, exactly-once settlement by partial unique index, idempotency by external reference) locked inside one product and entangled with that product's authz and pricing. A high-rate gateway needs the same guarantees for a different traffic shape: thousands of short gateway calls a second, already metered into Redis counters because Postgres per request did not scale. Extract the core, and shape the port so both traffic shapes fit.
+trigger: >-
+  the origin product's own credit package is a correct money ledger (balance as
+  a fold, holds excluded from available, exactly-once settlement by partial
+  unique index, idempotency by external reference) locked inside one product and
+  entangled with that product's authz and pricing. A high-rate gateway needs the
+  same guarantees for a different traffic shape: thousands of short gateway
+  calls a second, already metered into Redis counters because Postgres per
+  request did not scale. Extract the core, and shape the port so both traffic
+  shapes fit.
 ---
 
 # ledger
