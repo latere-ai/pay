@@ -26,7 +26,9 @@ spec:
   # One status, because every spec here records a surface that shipped. A
   # closed vocabulary of one is the strongest form of the check: anything
   # else in the tree is either a typo or a lifecycle nobody agreed to.
-  status: [implemented]
+  # `archived` is the terminal status; `implemented` is a shipped spec kept at
+  # the root as the live record.
+  status: [implemented, archived]
   require: [title, status]
   # specs/README.md carries a row per spec with the status it claims. A
   # status column that disagrees with the spec is worse than no column,
@@ -35,3 +37,6 @@ spec:
   # The specs describe their surfaces in Markdown tables, and a row whose
   # cell count drifts renders as silently missing columns.
   tables: true
+  archive:
+    dir: .archive
+    statuses: [archived]

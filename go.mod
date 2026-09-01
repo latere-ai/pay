@@ -14,7 +14,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
-	latere.ai/x/ci-gate v0.24.0 // indirect
+	latere.ai/x/ci-gate v0.25.2 // indirect
 )
 
 tool latere.ai/x/ci-gate/cmd/lateregate
