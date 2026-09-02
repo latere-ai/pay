@@ -10,33 +10,44 @@ hermetic:
   # true, since the first test to reach for psql or curl would fail here.
   allow: []
 
-modernize:
-  # newexpr rewrites pointer helpers to new(v) and inlines the call sites
-  # unevenly, leaving the helper with no callers and giving an untyped
-  # constant argument the wrong default type. errorsastype rewrites errors.As
-  # to errors.AsType[T], whose type parameter a local non-error interface
-  # target does not satisfy -- the pgx SQLSTATE check in ledger/pgledger is
-  # exactly that shape -- so the rewrite does not compile. lateregate checks
-  # both fixers still exist, because `go fix` rejects an unknown -name=false
-  # and the gate would otherwise pass having run nothing.
-  disable: [newexpr, errorsastype]
-
 spec:
-  dir: specs
   # One status, because every spec here records a surface that shipped. A
   # closed vocabulary of one is the strongest form of the check: anything
   # else in the tree is either a typo or a lifecycle nobody agreed to.
   # `archived` is the terminal status; `implemented` is a shipped spec kept at
   # the root as the live record.
   status: [implemented, archived]
-  require: [title, status]
-  # specs/README.md carries a row per spec with the status it claims. A
-  # status column that disagrees with the spec is worse than no column,
-  # because a reader trusts it.
-  index: specs/README.md
   # The specs describe their surfaces in Markdown tables, and a row whose
   # cell count drifts renders as silently missing columns.
   tables: true
   archive:
     dir: .archive
     statuses: [archived]
+
+cover:
+  # Ninety-five, above the shared floor: the ledger is money, and the pure
+  # logic sits in packages with no device and no network.
+  threshold: 95.0
+  exempt:
+    # The value is the reason. lateregate rejects an empty one.
+    paytest: >-
+      a conformance suite: most of its remaining statements are t.Errorf calls
+      that run only when an implementation under test is broken, and reaching
+      them would mean faking a *testing.T rather than testing anything real
+    ledgertest: >-
+      a conformance suite, as paytest; its logic runs on every store and
+      adapter test here and in every consumer, which a statement counter does
+      not see
+    pgledger: >-
+      every statement needs a Postgres server and its tests skip without
+      TEST_DATABASE_URL; the suite runs against a real server in this
+      repository's own postgres job, the only place that can host one
+
+license:
+  # The identifier every source file carries and the holder it names. There
+  # is no default: this is the decision the gate checks the tree against.
+  # `go tool lateregate license -w` writes the notice where it is missing.
+  spdx: MIT
+  holder: Latere AI
+  extensions: ['.go']
+  names: [Makefile]

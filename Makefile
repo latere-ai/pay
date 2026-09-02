@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Latere AI
+# SPDX-License-Identifier: MIT
+
 # The verification contract for pay.
 #
 # Every target here is one latere-ai/ci's go-verify workflow probes for and
@@ -5,56 +8,28 @@
 # The gates themselves live in latere.ai/x/ci-gate, pinned in go.mod; what
 # each one asserts for this repository is in .lateregate.yaml.
 
-COVER_MIN := 95
-
-.PHONY: all test test-race test-hermetic cover cover-html fuzz fmt fmt-check lint lint-config lint-modernize spec-lint validate no-vendor-leak tidy hooks
+.PHONY: check all test test-race test-hermetic cover cover-html fuzz fmt fmt-check lint lint-config lint-modernize spec-lint validate no-vendor-leak tidy hooks
 
 all: fmt-check lint test cover spec-lint validate
 
 # vet before test, because a vet finding is a fact about the code that does
 # not need the suite to run to be true.
 test:
-	go vet ./...
-	go test ./...
+	@go tool lateregate test
 
 # The suite under the race detector. The ledger is written for concurrent
 # holders, so this is the target that exercises the claim.
 test-race:
-	go test -race ./...
+	@go tool lateregate race
 
 # The suite with only the Go toolchain on PATH. A test that depends on what
 # happens to be installed passes locally and fails on a runner.
 test-hermetic:
 	@go tool lateregate hermetic
 
-# COVER_PKGS is every package whose statements the floor applies to: ./... minus
-# the two conformance suites, paytest and ledgertest, and minus pgledger.
-#
-# paytest and ledgertest are test-support. Most of their remaining statements
-# are t.Errorf calls that run only when the implementation under test is
-# broken, and reaching them would mean faking a *testing.T rather than testing
-# anything real. Their logic is exercised on every single run -- by this repo's
-# own stores and adapters, and by each consumer's -- so they are covered in the
-# sense that matters, just not in the sense a statement counter measures.
-#
-# pgledger is out for a different reason: every statement in it needs a
-# Postgres server, and its tests skip without TEST_DATABASE_URL. Leaving it in
-# would make this floor a measure of whether a database happened to be
-# reachable. The Postgres suite runs with a real server in this repository's
-# own postgres job, which is the only place that can host one.
-COVER_PKGS = $(shell go list ./... | grep -Ev '/(paytest|ledgertest|pgledger)$$' | paste -sd, -)
-
+# Per package against the floor and the exemptions in .lateregate.yaml.
 cover:
-	go test -coverprofile=coverage.out -coverpkg=$(COVER_PKGS) ./...
-	@go tool cover -func=coverage.out | tail -1
-	@# An empty profile (only the mode: line) means there are no statements to
-	@# measure yet, which is a scaffold rather than a coverage regression. Once
-	@# any package carries code, the floor binds.
-	@if [ $$(grep -vc '^mode:' coverage.out) -eq 0 ]; then \
-	  echo "no statements yet; coverage floor not applicable"; exit 0; \
-	fi; \
-	pct=$$(go tool cover -func=coverage.out | tail -1 | awk '{print $$3}' | tr -d '%'); \
-	awk -v p="$$pct" -v m="$(COVER_MIN)" 'BEGIN { if (p+0 < m+0) { printf "coverage %.1f%% is below the %d%% floor\n", p, m; exit 1 } }'
+	@go tool lateregate cover
 
 cover-html: cover
 	go tool cover -html=coverage.out
@@ -87,12 +62,9 @@ lint-modernize:
 lint-config:
 	@go tool lateregate golangci
 
-GOLANGCI_VERSION ?= v2.13.1
-
-# The linter CI runs, against the config lint-config renders. Without this the
-# only machine that ever lints this repository is a runner.
-lint: lint-config
-	@go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) run ./...
+# golangci-lint at the version lateregate pins, against the config it renders.
+lint:
+	@go tool lateregate lint
 
 # specs/ records why each package has the shape it has, and specs/README.md
 # carries a status per spec. A table nobody checks disagrees with the code
@@ -121,3 +93,9 @@ hooks:
 	git config core.hooksPath .githooks
 	@[ -e CLAUDE.md ] || [ -L CLAUDE.md ] || ln -s AGENTS.md CLAUDE.md
 	@echo "installed git hooks (core.hooksPath=.githooks)"
+
+# The whole shared bar. Every gate lives in lateregate, pinned as a tool in
+# go.mod; this target is a name for `go tool lateregate` and nothing else.
+# The plan: `go tool lateregate list`. One gate: `go tool lateregate <gate>`.
+check:
+	@go tool lateregate
