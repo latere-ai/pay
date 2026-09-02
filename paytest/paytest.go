@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: MIT
+
 // Package paytest is the conformance suite every pay.Provider must pass.
 //
 // It exists so "is this a valid adapter" is one shared test rather than a

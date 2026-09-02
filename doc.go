@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: MIT
+
 // Package pay is the seam between a product and a card processor.
 //
 // It says what taking money requires — open a hosted payment page, charge a

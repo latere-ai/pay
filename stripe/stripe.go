@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: MIT
+
 // Package stripe is the Stripe implementation of pay.Provider.
 //
 // It is the only place in the component that names the vendor: everything

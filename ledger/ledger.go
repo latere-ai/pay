@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: MIT
+
 // Package ledger is what money the platform holds, whose it is, and what
 // happened to it.
 //

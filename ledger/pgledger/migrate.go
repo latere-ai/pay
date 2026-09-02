@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: MIT
+
 // Package pgledger is the Postgres implementation of ledger.Store.
 //
 // It is a separate package because it holds the one thing the port cannot

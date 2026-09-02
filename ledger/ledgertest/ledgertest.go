@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Latere AI
+// SPDX-License-Identifier: MIT
+
 // Package ledgertest is the contract every ledger.Store must satisfy.
 //
 // The in-memory store and the Postgres store are different implementations of
