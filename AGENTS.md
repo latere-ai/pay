@@ -6,3 +6,4 @@
 - This is the money component. Amounts are int64 micro-USD, never floats. A write API takes an unsigned magnitude and applies the sign itself.
 - Import direction is one way: stripe -> root -> money; ledger -> money; money -> nothing. Only a product's main imports stripe.
 - Relevant latere projects and shared components (latere.ai/x/pkg/*) are in ../
+- Every sentence is written for one reader (user, contributor, developer) and the register follows the reader; an error has one code, one fixed user sentence in `message`, and one developer detail in a separate field. The rule and the review checklist: https://github.com/latere-ai/pkg/blob/main/docs/writing/registers.md
