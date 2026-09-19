@@ -58,5 +58,24 @@ identity:
 
 # The database shape: which endpoint the serving path connects on.
 postgres:
-  # Direct until this repository's cutover release reads DATABASE_POOL_URL.
+  # A client library: every entry point takes a pool the caller opened, so
+  # the endpoint is the caller's decision. The role records the client
+  # import, not a connection this repository makes.
   role: direct
+
+# Staying on the direct endpoint is an exception, so it carries a reason and
+# a date. The gate fails the direct role without this entry, and fails it
+# again the day after the date, which is when somebody decides whether the
+# reason still holds.
+waive:
+  postgres:
+    reason: >-
+      a library and not a deployment: nothing here reads a connection
+      string or opens a pool, because every entry point takes the pool its
+      consumer opened and hands back. There is no serving path in this
+      repository to move onto a pooler, and the repository that owns the
+      connection is the one the pooled rule applies to. This stops holding
+      the day something here opens a connection of its own, which is the
+      day it declares pooled and reads a pooled name with a direct
+      fallback.
+    until: 2026-12-19
