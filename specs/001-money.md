@@ -99,7 +99,7 @@ func Ceil(num, den int64) int64
 One rule, stated once: **every conversion that decides what somebody is
 charged rounds away from zero; every conversion that quotes a number
 back rounds toward zero.** The bias is at most one micro per operation
-and it always favours the platform. The opposite bias, repeated across
+and it always favors the platform. The opposite bias, repeated across
 millions of gateway calls, is the platform paying for rounding.
 
 Formally, for a cost expressed as a rate per million tokens:
@@ -136,7 +136,7 @@ $$
 $$
 
 The percentage cut rounds half up. It is lifted verbatim from the origin
-product's settings-level spread calculation, whose behaviour is already
+product's settings-level spread calculation, whose behavior is already
 covered there by a test the extraction reproduces assertion for assertion, so
 the two are provably equivalent.
 

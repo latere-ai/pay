@@ -60,7 +60,7 @@ err := book.Credit(ctx, ledger.Posting{
 ```
 
 Call it twice with the same `Ref` and the balance moves once. That is the entire
-defence against a replayed webhook.
+defense against a replayed webhook.
 
 ## 3. Take money out, safely
 

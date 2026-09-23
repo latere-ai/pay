@@ -61,7 +61,7 @@ func TestRegression_ManagedPaymentsLeftOnOverchargesTheCustomer(t *testing.T) {
 // confirm later with async_payment_succeeded, carrying the same payment intent.
 // Crediting on completed regardless would credit an unpaid purchase and then
 // credit it again; crediting only on a paid session makes the ledger's dedupe
-// the second line of defence rather than the only one.
+// the second line of defense rather than the only one.
 func TestRegression_AnAsyncPurchasePaysTwiceAndMustCreditOnce(t *testing.T) {
 	a := newAdapter(t, newStub(t))
 

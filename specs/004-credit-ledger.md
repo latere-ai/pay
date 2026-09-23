@@ -25,7 +25,7 @@ trigger: >-
 `latere.ai/x/pay/ledger` is what money the platform holds, whose it is,
 and what happened to it. Every balance in every product is a fold over
 one append-only table. There is no stored balance anywhere: a
-materialised total is a second source of truth and it drifts the first
+materialized total is a second source of truth and it drifts the first
 time a row is corrected. Folding also means the answer to "why does this
 holder have this much" is the rows themselves, each naming its actor and
 its cause.
@@ -112,7 +112,7 @@ type Reason string
 
 The origin product's `topup` becomes `KindCredit` + `Reason("topup")`, its
 `allocate`/`reclaim` become `KindTransfer` with reasons, its `draft`
-becomes `KindDebit` + `Reason("draft")`. No behaviour changes; the mapping is
+becomes `KindDebit` + `Reason("draft")`. No behavior changes; the mapping is
 mechanical, and it is covered by the cross-repo migration tracked outside this
 repository rather than by anything here.
 
@@ -230,7 +230,7 @@ func (s *Store) Bind(tx pgx.Tx) ledger.Ops
 The in-memory store's writes lock the store itself and satisfy `Ops`
 directly. Both are driven through
 `ledgertest.RunStoreContract(t, factory)`, which is the origin product's store
-contract suite (646 lines, already green against real Postgres 16) generalised
+contract suite (646 lines, already green against real Postgres 16) generalized
 and exported, so "does this store behave" is one suite rather than a
 per-product opinion.
 
@@ -428,7 +428,7 @@ rather than ledger mechanics:
   the origin product's existing arrangement.
 - Concurrency: N goroutines holding against one holder admit exactly
   `floor(balance / reserve)` of them and the rest get `ErrInsufficient`
-  (the origin product's concurrency suite, generalised).
+  (the origin product's concurrency suite, generalized).
 - Exactly-once: concurrent settles of one group produce one debit.
 - Idempotency: the same ref twice moves the balance once; a reversal
   dedupes on its own ref independently of the purchase's.
@@ -485,7 +485,7 @@ Additions beyond the spec:
   implementation of `Ops` in another package shares one definition.
 - `SetRandReadForTest` makes the id-mint failure reachable, which is how the
   "a write that cannot mint an id must not land" guarantee is tested.
-- `RollupRef` normalises its window to UTC, so a caller in another time zone
+- `RollupRef` normalizes its window to UTC, so a caller in another time zone
   cannot double-post a window.
 - `MemStore.Within` rolls back by snapshotting, so both stores satisfy the
   contract's "a failed unit moves nothing".

@@ -16,7 +16,7 @@ trigger: the origin product's own payment package is already the right abstracti
 
 `latere.ai/x/pay`, the repo's root package, says what taking money requires, without
 naming a processor: open a payment page, charge a method somebody
-already authorised, verify and reduce a webhook. It carries the types,
+already authorized, verify and reduce a webhook. It carries the types,
 the errors, an in-memory fake, and the HTTP plumbing that turns a
 verified event into a handler call.
 
@@ -311,7 +311,7 @@ processor.
 ## Invariants
 
 1. **Nothing in this package names a vendor.** `Name` holds identifiers,
-   not behaviour. The one permitted vendor-shaped field is `Event.Raw`.
+   not behavior. The one permitted vendor-shaped field is `Event.Raw`.
 2. **No application policy.** The port never emails, never freezes an
    account, never decides what a purchase is worth. The origin product's
    purchase reversal reads the balance before, reverses, then notifies on

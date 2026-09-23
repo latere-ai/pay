@@ -84,7 +84,7 @@ func TestRollupRefIsStableAndOrdered(t *testing.T) {
 	if a == ledger.RollupRef(h, w.Add(time.Hour), 0) {
 		t.Error("two windows share a reference")
 	}
-	// The window is normalised to UTC, so a caller in another zone produces the
+	// The window is normalized to UTC, so a caller in another zone produces the
 	// same key for the same instant and does not double-post.
 	loc := time.FixedZone("elsewhere", 5*3600)
 	if ledger.RollupRef(h, w.In(loc), 0) != a {

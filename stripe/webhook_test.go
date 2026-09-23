@@ -313,7 +313,7 @@ func TestParseWebhook_PaymentFailedIsTelemetryNotALedgerWrite(t *testing.T) {
 }
 
 func TestParseWebhook_ReportsAnUndecodableObject(t *testing.T) {
-	// Every modelled branch decodes its object. A payload that verifies but
+	// Every modeled branch decodes its object. A payload that verifies but
 	// carries the wrong shape is an error rather than a silent zero event: an
 	// event that cannot be read is not an event that moved no money.
 	for _, typ := range []string{eventSessionCompleted, eventSessionAsyncPaid, eventChargeRefunded, eventDisputeCreated, eventPaymentFailed} {

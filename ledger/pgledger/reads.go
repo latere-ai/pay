@@ -146,7 +146,7 @@ func (s *Store) NegativeHolders(ctx context.Context, namespace string) ([]ledger
 // account holds.
 func (s *Store) TotalOutstanding(ctx context.Context, namespaces ...string) (money.Micro, error) {
 	// A nil slice binds as NULL, and cardinality(NULL) is NULL, which makes the
-	// whole predicate NULL and matches nothing. Normalise to an empty array so
+	// whole predicate NULL and matches nothing. Normalize to an empty array so
 	// "no namespaces" means "all of them" rather than "none".
 	if namespaces == nil {
 		namespaces = []string{}

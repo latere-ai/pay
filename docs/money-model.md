@@ -43,7 +43,7 @@ hypothetical; it is why the rule exists.
 
 One rounding rule, stated once: **what decides a charge rounds away from zero,
 what quotes a number back rounds toward it.** The bias is at most one micro and
-always favours the platform. The opposite bias, repeated, is the platform paying.
+always favors the platform. The opposite bias, repeated, is the platform paying.
 
 ## 3. A hold is money committed but not spent
 

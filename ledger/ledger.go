@@ -5,7 +5,7 @@
 // happened to it.
 //
 // Every balance is a fold over one append-only table. There is no stored
-// balance anywhere: a materialised total is a second source of truth and it
+// balance anywhere: a materialized total is a second source of truth and it
 // drifts the first time a row is corrected. Folding also means the answer to
 // "why does this holder have this much?" is the rows themselves, each naming
 // its actor and its cause.

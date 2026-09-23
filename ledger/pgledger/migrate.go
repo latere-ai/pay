@@ -79,11 +79,11 @@ CREATE INDEX ledger_entries_holder_time ON ledger_entries (holder, created_at DE
 //
 // A rolling deploy runs the old and new pods at once, so two processes migrate
 // the same database concurrently: both find a version missing, both run its
-// DDL, and the loser dies on "relation already exists". The lock serialises
+// DDL, and the loser dies on "relation already exists". The lock serializes
 // them.
 //
 // It is a constant a product can override because a product's other migrators
-// have their own ids, and a collision would silently serialise unrelated
+// have their own ids, and a collision would silently serialize unrelated
 // migrators. Pick one nothing else in that database uses.
 const DefaultMigrationLock int64 = 0x1ED6E4
 

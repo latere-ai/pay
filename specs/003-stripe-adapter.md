@@ -17,7 +17,7 @@ trigger: the origin product is the only Stripe integration in this family of ser
 **The origin product is the only Stripe integration in this family of services
 that has ever taken a payment.** A second one, on stripe-go v85, was written
 elsewhere and never used end to end; that code has since been removed. What
-survives from it is design, and it is labelled as such below because unproven
+survives from it is design, and it is labeled as such below because unproven
 code that reads as proven is how a bug gets inherited with confidence.
 
 | Capability | The origin product (v82, **in production**) | The second integration (v85, **never used**, removed) |
@@ -35,7 +35,7 @@ code that reads as proven is how a bug gets inherited with confidence.
 | Coverage | 57.7%, `CreateCheckout` untested | 100%, via an httptest stub |
 
 Read that last row carefully. the second implementation's 100% measures tests against a stub,
-not behaviour against Stripe. It is evidence the *harness* works, not
+not behavior against Stripe. It is evidence the *harness* works, not
 that the *adapter* does.
 
 ## Requirements learned in production
@@ -56,7 +56,7 @@ test named for the failure it prevents.
    reach for, leave `completed` unpaid and confirm later with
    `async_payment_succeeded`. Emit `KindPaid` only for a *paid* session,
    so two deliveries for one purchase credit exactly once and the
-   ledger's dedupe is the second line of defence rather than the only one.
+   ledger's dedupe is the second line of defense rather than the only one.
 
 3. **A refund reverses the exact micro-USD credited, not the amount
    paid.** A EUR charge converted at purchase time and reversed at a
@@ -105,7 +105,7 @@ one.
   is fine when a human clicks once and not fine when a daemon retries.
 - **`ParseWebhook(payload, http.Header)`**: reads `Stripe-Signature` from
   the header set rather than a bare string, which is where the
-  generalisation to PayPal costs nothing.
+  generalization to PayPal costs nothing.
 - **Capabilities**: `CapCheckout`, `CapSavedMethod`, `CapRefund`, and
   `CapTax` only when the deployment turns Stripe Tax on.
 
@@ -217,13 +217,13 @@ method rather than an adapter detail.
 
 ### What is not covered, and why
 
-Nothing in the package is uncovered. Three behaviours are *asserted
+Nothing in the package is uncovered. Three behaviors are *asserted
 against a stub rather than against Stripe*, and only a live test-mode run
 closes that gap. Named here rather than left implicit, with the card from
 [the Stripe operations guide](../docs/stripe-operations.md) that exercises
 each:
 
-| Behaviour | Card |
+| Behavior | Card |
 |---|---|
 | Managed Payments actually off, so the charge equals the quote | any, checked on the resulting PaymentIntent |
 | `authentication_required` really is a 402 card_error | `4000 0025 0000 3155` |

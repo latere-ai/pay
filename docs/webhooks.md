@@ -55,7 +55,7 @@ parses vendor JSON.
 | `KindRefunded` | Refunded | `Reverse`, keyed on `ReversalRef` |
 | `KindDisputed` | Charged back | `Reverse`, keyed on `ReversalRef` |
 | `KindPaymentFailed` | A charge did not go through | Telemetry. Never a ledger write |
-| `KindIgnored` | Not modelled | Never reaches your handler |
+| `KindIgnored` | Not modeled | Never reaches your handler |
 
 `Ref` is the purchase's reference and is stable across deliveries of the same
 purchase. `ReversalRef` is the refund's **own** reference, distinct on purpose,
@@ -86,7 +86,7 @@ sequenceDiagram
 ```
 
 Both purchases credit exactly once. The adapter emits `KindPaid` only for a
-*paid* session, and the ledger's dedupe on `Ref` is the second line of defence
+*paid* session, and the ledger's dedupe on `Ref` is the second line of defense
 rather than the only one.
 
 If you subscribe to only one of those two events you have a live bug in one

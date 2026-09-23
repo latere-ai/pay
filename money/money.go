@@ -84,7 +84,7 @@ func (c Currency) Valid() bool {
 }
 
 // Exponent is the number of decimal places c's minor unit carries: 2 for USD
-// and EUR. An unknown currency reports 0, which is not a licence to use it;
+// and EUR. An unknown currency reports 0, which is not a license to use it;
 // callers that care ask Valid first.
 func (c Currency) Exponent() int { return exponents[c] }
 
@@ -106,7 +106,7 @@ func (c Currency) microsPerMinor() int64 {
 //
 // This is the direction that decides what somebody is charged, so a fraction
 // of a cent is charged rather than absorbed. The bias is at most one minor
-// unit per operation and it always favours the platform; the opposite bias,
+// unit per operation and it always favors the platform; the opposite bias,
 // repeated, is the platform paying for rounding.
 func (m Micro) MinorUp(c Currency) int64 {
 	return Ceil(int64(m), c.microsPerMinor())

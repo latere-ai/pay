@@ -40,7 +40,7 @@ const (
 // ParseWebhook authenticates a delivery and reduces it to a pay.Event.
 //
 // It reads Stripe-Signature from the header set rather than taking a bare
-// string, which is where generalising to a processor that spreads verification
+// string, which is where generalizing to a processor that spreads verification
 // across several headers costs nothing.
 //
 // IgnoreAPIVersionMismatch is on: the signature is what authenticates the
@@ -118,7 +118,7 @@ func ignored(payload []byte) pay.Event {
 // reach for — leaves `completed` unpaid and confirms later with
 // `async_payment_succeeded`. Only a *paid* session credits, so the two
 // deliveries for one async purchase credit exactly once and the ledger's dedupe
-// on the payment intent is the second line of defence rather than the only one.
+// on the payment intent is the second line of defense rather than the only one.
 func (a *Adapter) session(raw, payload []byte) (pay.Event, error) {
 	var s stripe.CheckoutSession
 	if err := json.Unmarshal(raw, &s); err != nil {

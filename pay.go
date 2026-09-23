@@ -168,7 +168,7 @@ const (
 	KindRefunded Kind = "refunded"
 	KindDisputed Kind = "disputed"
 	// KindPaymentFailed is a charge that did not go through. It is never a
-	// ledger write, and it is modelled anyway because auto-recharge needs to
+	// ledger write, and it is modeled anyway because auto-recharge needs to
 	// know its attempt failed. Reducing it to KindIgnored would mean
 	// WebhookHandler dropped it and a product could never observe a recharge
 	// that silently stopped working.
@@ -228,14 +228,14 @@ type Provider interface {
 	// one if needed. Idempotent on email. ErrUnsupported when the adapter has no
 	// customer concept.
 	EnsureCustomer(ctx context.Context, email string, meta map[string]string) (CustomerRef, error)
-	// ChargeSaved charges a method the customer already authorised, with no page
+	// ChargeSaved charges a method the customer already authorized, with no page
 	// and nobody present. A decline is ErrDeclined and must not be retried.
 	ChargeSaved(ctx context.Context, p SavedChargeParams) (Charge, error)
 	// ParseWebhook authenticates a delivery and reduces it to an Event.
 	//
 	// It takes the whole header set rather than one signature string: Stripe
 	// signs in Stripe-Signature, PayPal spreads verification across five
-	// headers, and a one-string signature would have to be re-generalised the
+	// headers, and a one-string signature would have to be re-generalized the
 	// day a second adapter lands.
 	ParseWebhook(payload []byte, h http.Header) (Event, error)
 }

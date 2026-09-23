@@ -91,7 +91,7 @@ stripe trigger charge.refunded
 
 Test mode only; they never move real money.
 
-| Card | Behaviour |
+| Card | Behavior |
 |---|---|
 | `4242 4242 4242 4242` | Succeeds immediately |
 | `4000 0025 0000 3155` | 3D Secure challenge, which is the `requires_action` path |

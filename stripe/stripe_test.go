@@ -15,7 +15,7 @@ import (
 // An unconfigured deployment is the default posture: the service boots, every
 // operation refuses, and nothing sells. It is also what every test in every
 // product that is not about payment runs against, so it has to be the one
-// behaviour that cannot be got wrong.
+// behavior that cannot be got wrong.
 func TestNew_WithoutBothSecretsTheAdapterRefusesEverything(t *testing.T) {
 	for _, tc := range []struct {
 		name string

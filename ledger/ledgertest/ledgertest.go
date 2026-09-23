@@ -408,7 +408,7 @@ func RunStoreContract(t *testing.T, newStore Factory) {
 		}
 	})
 
-	t.Run("a statement reads newest first and honours its limit", func(t *testing.T) {
+	t.Run("a statement reads newest first and honors its limit", func(t *testing.T) {
 		s, ctx := newStore(t), context.Background()
 		for i := range 5 {
 			mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: "r" + strconv.Itoa(i), Reason: ledger.Reason("n" + strconv.Itoa(i))})

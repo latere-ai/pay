@@ -180,7 +180,7 @@ func (a *Adapter) CreateCheckout(ctx context.Context, p pay.CheckoutParams) (pay
 			PriceData: &stripe.CheckoutSessionCreateLineItemPriceDataParams{
 				Currency: stripe.String(string(cur)),
 				// MinorUp, not MinorDown: a fraction of a cent is charged rather
-				// than absorbed, and the bias always favours the platform.
+				// than absorbed, and the bias always favors the platform.
 				UnitAmount: stripe.Int64(p.Amount.MinorUp(cur)),
 				ProductData: &stripe.CheckoutSessionCreateLineItemPriceDataProductDataParams{
 					Name: stripe.String(name),
@@ -303,7 +303,7 @@ func escapeQuery(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(s)
 }
 
-// ChargeSaved charges a method the customer already authorised, with no page
+// ChargeSaved charges a method the customer already authorized, with no page
 // and nobody present.
 //
 // This is what auto-recharge runs on. Three outcomes matter and they are not

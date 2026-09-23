@@ -4,7 +4,7 @@
 // Package pay is the seam between a product and a card processor.
 //
 // It says what taking money requires — open a hosted payment page, charge a
-// method somebody already authorised, verify and reduce a webhook — without
+// method somebody already authorized, verify and reduce a webhook — without
 // naming the vendor, so the orchestration is testable offline and an adapter
 // is one implementation rather than the only shape money can take.
 //
