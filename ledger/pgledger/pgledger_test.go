@@ -168,7 +168,7 @@ func TestEveryOperationFailsClosedOnADeadPool(t *testing.T) {
 func TestLabelsRoundTripThroughJSONB(t *testing.T) {
 	s := pgledger.New(openTest(t))
 	ctx := context.Background()
-	h := ledger.NewHolder("project", "labelled")
+	h := ledger.NewHolder("project", "labeled")
 	want := map[string]string{"project_name": "A study of ünïcode", "team": "core"}
 	if err := s.Credit(ctx, ledger.Posting{Holder: h, Amount: money.Dollar, Ref: "lab", Labels: want}); err != nil {
 		t.Fatalf("Credit: %v", err)
