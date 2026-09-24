@@ -38,13 +38,16 @@ import (
 // either 404 or, worse, collide with an unrelated object.
 var ErrForeignCustomer = errors.New("pay/stripe: customer reference belongs to another processor")
 
-// ErrNotUSD reports a delivery whose amount is not in USD.
+// ErrNotUSD reports an amount that is not in USD: a checkout or charge the
+// adapter will not create, or a delivery it will not credit.
 //
 // pay.Event.Gross is micro-USD by definition. Reporting a EUR minor unit as
 // though it were USD would credit a wallet a hundredfold, so the adapter
-// refuses rather than guesses. Adaptive Pricing makes this unreachable in a
-// correctly configured account: the session is created in USD and
-// currency_conversion carries that USD total back.
+// refuses a delivery rather than guesses. It refuses a checkout or charge in
+// another currency before calling Stripe, because that delivery is what the
+// customer's payment would produce. Adaptive Pricing is how a customer pays in
+// their own currency: the session is created in USD and currency_conversion
+// carries that USD total back.
 var ErrNotUSD = errors.New("pay/stripe: amount is not in USD")
 
 // ErrNoReference reports a delivery that moved money but carries no reference
@@ -396,13 +399,21 @@ func chargeStatus(s stripe.PaymentIntentStatus) pay.ChargeStatus {
 	}
 }
 
-// currency resolves the presentment currency, defaulting to USD.
+// currency resolves the currency a session or intent is created in, defaulting
+// to USD and refusing every other.
+//
+// A paid amount is credited only in USD, so a session or intent created in
+// another currency would charge the customer and then be refused when its
+// webhook arrived, crediting nothing. Refusing here, before Stripe is called,
+// is what keeps a charge from happening without a credit. A customer abroad
+// still sees their own currency through Adaptive Pricing on a USD session.
 func currency(c money.Currency) (money.Currency, error) {
-	if c == "" {
+	switch {
+	case c == "" || c == money.USD:
 		return money.USD, nil
-	}
-	if !c.Valid() {
+	case !c.Valid():
 		return "", fmt.Errorf("pay/stripe: %w: %s", money.ErrCurrency, c)
+	default:
+		return "", fmt.Errorf("pay/stripe: %w: currency %s, want usd", ErrNotUSD, c)
 	}
-	return c, nil
 }

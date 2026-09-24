@@ -5,7 +5,7 @@ repo: latere-ai/pay
 package: latere.ai/x/pay/stripe
 effort: medium
 created: 2026-08-22
-updated: 2026-08-22
+updated: 2026-09-24
 author: changkun
 trigger: the origin product is the only Stripe integration in this family of services that has ever taken a payment. A second one was written elsewhere, never used end to end, and is being deleted. The adapter is built on the proven one, with the shapes the unproven one worked out carried over as design and proven here for the first time.
 ---
@@ -238,3 +238,18 @@ nil-dereferenced the endpoint, and a paid session with no payment intent
 produced a credit with no reference, which the ledger cannot dedupe and
 which would therefore post again on every redelivery. Both now fail
 closed, and reversals gained the same guard.
+
+## Outcome addendum, 2026-09-24
+
+### A checkout in another currency is refused before it exists
+
+`CreateCheckout` accepted `money.EUR`. A session created in EUR comes back
+paid with no `currency_conversion` to USD, so `sessionGross` refused it with
+`ErrNotUSD` after the customer had paid, and nothing was credited. Refusing
+the delivery was right, since `Gross` is micro-USD; the defect was letting the
+session exist. `currency` now refuses every valid currency but USD with
+`ErrNotUSD`, and `CreateCheckout` and `ChargeSaved` both resolve through it,
+so neither calls Stripe. `ChargeSaved` is included because an intent created
+in EUR is refused the same way when its success is delivered. Adaptive
+Pricing is untouched: the session is created in USD and presented in the
+customer's currency, and `currency_conversion` still carries the USD total.

@@ -246,6 +246,18 @@ func TestChargeSaved_RefusesWhatItCannotChargeSafely(t *testing.T) {
 				}
 			},
 		},
+		{
+			// An intent created in EUR succeeds in EUR, and a paid amount that
+			// is not USD is refused rather than credited: the customer would
+			// pay and nothing would post.
+			name: "a currency the ledger cannot credit",
+			p:    func() pay.SavedChargeParams { p := recharge(); p.Currency = money.EUR; return p }(),
+			check: func(t *testing.T, err error) {
+				if !errors.Is(err, ErrNotUSD) {
+					t.Errorf("err = %v, want ErrNotUSD", err)
+				}
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newStub(t)

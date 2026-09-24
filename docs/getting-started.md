@@ -167,6 +167,11 @@ out, err := processor.CreateCheckout(ctx, pay.CheckoutParams{
 })
 ```
 
+Create the checkout in USD, as here. The ledger holds micro-USD, so the Stripe
+adapter refuses any other currency before anyone is charged. A customer abroad
+still sees their own currency through Stripe's Adaptive Pricing; see
+[Running Stripe](stripe-operations.md).
+
 Then mount the webhook. See [Webhooks](webhooks.md) for why the status codes
 matter and what each event means.
 

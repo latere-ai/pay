@@ -298,6 +298,27 @@ func TestCreateCheckout_RefusesACurrencyMoneyDoesNotKnow(t *testing.T) {
 	}
 }
 
+// TestCreateCheckout_RefusesACurrencyTheWebhookCannotCredit pins where a
+// non-USD checkout is refused. A session created in EUR comes back paid with no
+// currency_conversion to USD, and the webhook refuses it with ErrNotUSD: the
+// customer has paid and nothing is credited. The refusal therefore belongs
+// before the session exists. A EUR customer pays in euros through Adaptive
+// Pricing on a USD session, which the webhook credits.
+func TestCreateCheckout_RefusesACurrencyTheWebhookCannotCredit(t *testing.T) {
+	s := newStub(t)
+	s.json(http.MethodPost, sessionsPath, sessionCreated)
+	a := newAdapter(t, s)
+
+	p := topUp()
+	p.Currency = money.EUR
+	if _, err := a.CreateCheckout(context.Background(), p); !errors.Is(err, ErrNotUSD) {
+		t.Errorf("CreateCheckout in eur = %v, want ErrNotUSD", err)
+	}
+	if n := len(s.callsTo(http.MethodPost, sessionsPath)); n != 0 {
+		t.Errorf("a EUR session reached Stripe (%d calls); its customer would pay and never be credited", n)
+	}
+}
+
 func TestCreateCheckout_ReportsATransportFailure(t *testing.T) {
 	s := newStub(t)
 	s.on(http.MethodPost, sessionsPath, func(w http.ResponseWriter, _ *http.Request) {

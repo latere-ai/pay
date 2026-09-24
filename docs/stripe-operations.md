@@ -64,10 +64,11 @@ charged differ from the amount quoted:
   charge, not a rate looked up afterwards.
 
 **Create every checkout in USD.** An empty `Currency` means USD. The
-adapter accepts `money.EUR` as a checkout currency, but a paid session
-that was not created in USD is refused when its webhook arrives, because
-the ledger holds micro-USD only: the customer is charged and nothing is
-credited. Let Adaptive Pricing present the local currency instead.
+adapter refuses any other currency with `stripe.ErrNotUSD` before it
+calls Stripe, and `ChargeSaved` refuses the same way. The ledger holds
+micro-USD only, so a payment taken in another currency could not be
+credited: the customer would be charged and nothing would post. Let
+Adaptive Pricing present the local currency instead.
 
 **Automatic Tax is off by default.** A checkout's total is then exactly the
 amount the product quoted. To turn it on, set `Tax: true` in
