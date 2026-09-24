@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.2.0 - 2026-09-24
+
 ### Fixed
 
 - The Stripe adapter refuses a checkout in any currency other than USD with
