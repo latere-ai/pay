@@ -10,6 +10,6 @@
 
 API reference is on [pkg.go.dev](https://pkg.go.dev/latere.ai/x/pay).
 
-Design notes, including approaches that were tried and rejected, live in
-[`../specs/`](../specs/). They are written for someone changing this library
-rather than using it.
+Changing the library rather than using it? [`CONTRIBUTING.md`](../CONTRIBUTING.md)
+covers building and testing a change, and [`../specs/`](../specs/README.md) is
+the design record, including the approaches that were tried and rejected.

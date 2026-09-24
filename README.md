@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/latere-ai/pay/actions/workflows/ci.yml/badge.svg)](https://github.com/latere-ai/pay/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/latere.ai/x/pay.svg)](https://pkg.go.dev/latere.ai/x/pay)
-[![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)](#testing)
+[![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)](CONTRIBUTING.md#coverage)
 [![Go](https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white)](go.mod)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -23,7 +23,7 @@ call, a webhook whose status codes are subtly wrong, a balance column that
 drifts from its history, and a refund path nobody tested. Each is easy to get
 almost right.
 
-This library is the version that has been got wrong already and fixed.
+This library is those four, already gotten wrong once and fixed.
 
 - A **webhook handler** with the status codes pinned, because returning the
   wrong one either loses a purchase or credits it twice.
@@ -42,7 +42,7 @@ processor := stripe.New(stripe.Config{
     SecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
     WebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 })
-book := pgledger.New(pool)
+book := pgledger.New(pool) // after pgledger.Migrate(ctx, pool)
 
 // Quote the cut before the redirect, and carry what it credits on the session.
 spread := money.Spread{Bps: 500, FixedMicro: 30 * money.Cent}
@@ -116,41 +116,36 @@ subtracted from what is *available*, which is what stops two concurrent
 requests spending the same money. Every write that an outside system can replay
 is idempotent on that system's reference.
 
-## Testing
+## Testing your integration
 
-```bash
-make test    # unit
-make race    # with the race detector
-make cover   # 95% floor, enforced
-make fuzz    # every fuzz target, 30s each
-```
+Your money path is testable with no processor and no database.
 
-The ledger's Postgres half needs a database. Without one it is **silently
-skipped**, which is how a ledger can look far less proven than it is:
+- `ledger.NewMemStore()` is a complete ledger in memory, with the same
+  guarantees as the Postgres store.
+- `pay.MemProvider` is a complete processor fake. It records every checkout
+  and charge and accepts synthetic webhook deliveries built with
+  `pay.MemEvent`, so a test drives purchase, credit, and refund end to end.
+  [Getting started](docs/getting-started.md#6-test-it-with-no-processor-at-all)
+  shows the shape.
 
-```bash
-TEST_DATABASE_URL='postgres://…' make cover
-```
-
-Both conformance suites are exported. If you write a processor adapter, run
-`paytest.RunProviderContract` against it; if you write a ledger store, run
-`ledgertest.RunStoreContract`. They found four real bugs in this library's own
-Postgres store before any caller existed.
+If you write your own processor adapter or ledger store, run the exported
+conformance suite against it: `paytest.RunProviderContract` for an adapter,
+`ledgertest.RunStoreContract` for a store. Both stores and the Stripe adapter
+in this repository pass the same suites, and the store suite found four real
+bugs in the Postgres store before any caller existed.
 
 ## Status
 
-Used in production by [Latere](https://latere.ai). The API is not frozen: it is
-`v0.x` and will change where the design turns out wrong. Breaking changes get a
-minor bump and a note in the release.
+Used in production by [Latere](https://latere.ai). The API is `v0.x` and will
+change where the design turns out wrong. A breaking change gets a minor
+version bump and an entry in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Contributing
 
-Issues and pull requests welcome.
-
-A bug fix wants a test that fails without it. CI enforces a coverage floor; if
-you hit a line that genuinely cannot be tested, mention it in the pull request
-and we will work out whether it wants a different shape rather than a lower
-gate.
+Issues and pull requests are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md)
+covers building and testing a change, including the Postgres half of the
+suite, the coverage floor, and how a release is cut. The design record, with
+the approaches that were tried and rejected, is in [`specs/`](specs/README.md).
 
 ## License
 
