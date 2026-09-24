@@ -7,7 +7,7 @@
 // that touches money imports this, so a cost computed by a rate card and a
 // balance folded from a ledger cannot disagree about what a number means.
 //
-// See docs/money-model.md.
+// See https://github.com/latere-ai/pay/blob/main/docs/money-model.md.
 package money
 
 import (

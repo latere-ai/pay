@@ -177,10 +177,10 @@ const (
 
 // Event is a verified delivery reduced to what a ledger needs.
 //
-// Flat and vendor-free: the adapter does the vendor work — the signature check,
-// following a charge to its balance transaction for the USD a non-USD charge is
-// actually worth — so a handler sees one trustworthy shape and never a redirect
-// parameter.
+// Flat and vendor-free: the adapter does the vendor work (the signature check,
+// and reading the USD a converted charge is actually worth from the
+// processor's own conversion on that charge), so a handler sees one
+// trustworthy shape and never a redirect parameter.
 type Event struct {
 	Kind     Kind
 	Provider Name

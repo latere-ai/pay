@@ -10,8 +10,10 @@
 // Stripe configuration rather than code, and the USD a converted charge is
 // actually worth arrives on the session as currency_conversion.
 //
-// See docs/stripe-operations.md for the account settings this adapter
-// assumes, and docs/adapters.md for writing a sibling.
+// See https://github.com/latere-ai/pay/blob/main/docs/stripe-operations.md
+// for the account settings this adapter assumes, and
+// https://github.com/latere-ai/pay/blob/main/docs/adapters.md for writing a
+// sibling.
 package stripe
 
 import (

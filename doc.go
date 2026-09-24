@@ -3,8 +3,8 @@
 
 // Package pay is the seam between a product and a card processor.
 //
-// It says what taking money requires — open a hosted payment page, charge a
-// method somebody already authorized, verify and reduce a webhook — without
+// It says what taking money requires (open a hosted payment page, charge a
+// method somebody already authorized, verify and reduce a webhook) without
 // naming the vendor, so the orchestration is testable offline and an adapter
 // is one implementation rather than the only shape money can take.
 //
@@ -13,6 +13,8 @@
 // Nothing here knows a ledger exists: a product wires an Event to a ledger
 // write.
 //
-// See docs/getting-started.md for the end-to-end path and docs/webhooks.md
-// for the delivery contract.
+// See https://github.com/latere-ai/pay/blob/main/docs/getting-started.md
+// for the end-to-end path and
+// https://github.com/latere-ai/pay/blob/main/docs/webhooks.md for the
+// delivery contract.
 package pay

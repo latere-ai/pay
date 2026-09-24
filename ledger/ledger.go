@@ -10,7 +10,7 @@
 // "why does this holder have this much?" is the rows themselves, each naming
 // its actor and its cause.
 //
-// See docs/money-model.md.
+// See https://github.com/latere-ai/pay/blob/main/docs/money-model.md.
 package ledger
 
 import (
