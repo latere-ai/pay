@@ -279,3 +279,12 @@ the `Ref` every redelivery carries, so a caller that credits a synchronous
 
 An intent created before this change carries no marker and is not credited
 from the webhook. No consumer called `ChargeSaved` when it landed.
+
+### `payment_intent.payment_failed` has a kind
+
+The note above that `payment_intent.payment_failed` has no `Kind` describes
+the adapter before `KindPaymentFailed` was added; see the Outcome addendum of
+[002-payment-port](002-payment-port.md). The event reduces to
+`KindPaymentFailed` and reaches the handler. The source comment on
+`paymentFailed` still said it reduced to `KindIgnored` and was dropped, and now
+names the kind it returns.

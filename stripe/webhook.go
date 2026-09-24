@@ -370,10 +370,11 @@ func disputed(raw, payload []byte) (pay.Event, error) {
 
 // paymentFailed carries a failed off-session charge.
 //
-// It is subscribed to for auto-recharge telemetry and is never a ledger write,
-// so it reduces to pay.KindIgnored — the port has no kind for "money did not
-// move". The intent's reference and metadata still ride along for a caller that
-// drives ParseWebhook itself; pay.WebhookHandler acknowledges and drops it.
+// It is subscribed to for auto-recharge telemetry and is never a ledger write.
+// It reduces to pay.KindPaymentFailed rather than pay.KindIgnored, so
+// pay.WebhookHandler delivers it to the handler instead of dropping it:
+// auto-recharge has to learn that its attempt failed. The intent's reference
+// and metadata ride along so the failure can be tied to the attempt.
 func paymentFailed(raw, payload []byte) (pay.Event, error) {
 	var pi struct {
 		ID       string            `json:"id"`
