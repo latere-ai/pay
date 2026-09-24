@@ -17,32 +17,40 @@ Getting these wrong is how a product loses a purchase or credits one twice.
 
 ```mermaid
 flowchart TD
-    IN([Delivery arrives]) --> READ{"Body readable<br/>within the cap?"}
-    READ -->|no| C400["<b>400</b><br/>never retried"]
-    READ -->|yes| SIG{"Signature<br/>verifies?"}
-    SIG -->|no| C400
-    SIG -->|unconfigured| C200A["<b>200</b><br/>acknowledged, dropped"]
-    SIG -->|yes| KIND{"A kind we<br/>model?"}
+    IN([Delivery arrives]) --> CONF{"Processor<br/>configured?"}
+    CONF -->|no| C200A["<b>200</b><br/>acknowledged, dropped"]
+    CONF -->|yes| PARSE{"Verified and<br/>reduced to an Event?"}
+    PARSE -->|no| C400["<b>400</b><br/>refused, nothing posted"]
+    PARSE -->|yes| KIND{"A kind the<br/>port models?"}
     KIND -->|no| C200A
     KIND -->|yes| H["your handler"]
     H -->|nil| C200B["<b>200</b><br/>done"]
-    H -->|error| C500["<b>500</b><br/>processor retries"]
+    H -->|error| C500["<b>500</b><br/>asks for a retry"]
 ```
 
 | Situation | Code | Why |
 |---|---|---|
-| Signature does not verify | 400 | A processor must not retry what it cannot authenticate |
-| No processor configured | 200 | Stop a processor retrying against a deployment that will never accept it |
+| No processor configured, or a nil `Provider` | 200 | Stop a processor redelivering to a deployment that will never accept it |
+| The delivery cannot be verified or reduced | 400 | Nothing was posted, and a redelivery of the same bytes is refused the same way |
 | An event the port does not model | 200 | It will not become actionable on the fourth redelivery |
 | Handler returns `nil` | 200 | Done |
-| Handler returns an error | 500 | The **only** path that asks for a retry |
+| Handler returns an error | 500 | The **only** code that asks for a retry |
+
+A delivery is refused with 400 when the adapter's `ParseWebhook` returns any
+error other than `pay.ErrUnconfigured`: a signature that does not verify, a
+body that does not decode, and anything the adapter fails closed on. The
+Stripe adapter fails closed on a paid event that carries no reference to
+dedupe on, and on an amount it cannot express in USD. Mount the handler with
+`pay.WithLogger` to see each refusal; without a logger nothing is logged.
 
 So: return an error from your handler **only** when a retry could succeed. A
 database that is briefly down, yes. An event you cannot make sense of, no.
 
-The body is read through a bounded reader (1 MiB, `pay.WithMaxBody` to change
-it). The endpoint is unauthenticated until the signature is checked, so an
-unbounded read is a memory-exhaustion surface open to the internet.
+The body is read through a bounded reader, 1 MiB by default and
+`pay.WithMaxBody` to change it. A longer body is cut at the limit and then
+fails verification. The endpoint is unauthenticated until the signature is
+checked, so an unbounded read would be a memory-exhaustion surface open to the
+internet.
 
 ## What an event means
 
@@ -54,7 +62,7 @@ parses vendor JSON.
 | `KindPaid` | Money received | `Credit`, keyed on `Ref` |
 | `KindRefunded` | Refunded | `Reverse`, keyed on `ReversalRef` |
 | `KindDisputed` | Charged back | `Reverse`, keyed on `ReversalRef` |
-| `KindPaymentFailed` | A charge did not go through | Telemetry. Never a ledger write |
+| `KindPaymentFailed` | A charge did not go through | Reaches your handler for telemetry or to notify the customer. Never a ledger write; return `nil` |
 | `KindIgnored` | Not modeled | Never reaches your handler |
 
 `Ref` is the purchase's reference and is stable across deliveries of the same
@@ -64,8 +72,8 @@ so a clawback dedupes independently of what it reverses.
 ## The two-delivery problem
 
 A card pays synchronously, so `completed` is already paid. SEPA Direct Debit,
-iDEAL and Bancontact — what European customers reach for — leave `completed`
-**unpaid** and confirm later.
+iDEAL, and Bancontact, the methods European customers reach for, leave
+`completed` **unpaid** and confirm later.
 
 ```mermaid
 sequenceDiagram
@@ -79,7 +87,7 @@ sequenceDiagram
 
     Note over S: SEPA
     S->>A: completed (unpaid)
-    A-->>S: KindIgnored — dropped
+    A-->>S: KindIgnored, dropped
     Note over S: hours later
     S->>A: async_payment_succeeded
     A->>You: KindPaid, ref pi_1

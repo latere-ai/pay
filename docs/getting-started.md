@@ -42,7 +42,10 @@ book := pgledger.New(pool)
 ```
 
 `Migrate` is idempotent and takes an advisory lock, so a rolling deploy running
-it from several pods at once is fine.
+it from several pods at once is fine. It keeps its own version table,
+`ledger_migrations`, beside your product's migrations. If another migrator in
+the same database already uses the lock id `pgledger.DefaultMigrationLock`,
+call `pgledger.MigrateWithLock` with one that nothing else uses.
 
 ## 2. Put money in
 
@@ -131,7 +134,19 @@ Newest first. Page backwards with `Page{Before: oldest.CreatedAt}`.
 
 ## 5. Charge a card
 
-Everything above works with no processor. To actually sell credit, add one.
+Everything above works with no processor. To actually sell credit, add one:
+
+```go
+processor := stripe.New(stripe.Config{
+    SecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
+    WebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
+})
+```
+
+With either value empty, `stripe.New` still returns an adapter, one that
+refuses every operation with `pay.ErrUnconfigured`. A local run or a
+deployment that does not sell anything boots and declines to sell rather than
+failing.
 
 Decide your cut **before** the redirect and carry what it credits on the
 session, so an operator editing the spread mid-flight cannot change what an
@@ -161,22 +176,57 @@ signature is what authenticates a purchase.
 ## 6. Test it with no processor at all
 
 `pay.MemProvider` is a full `Provider`. It records what it was asked to do and
-accepts synthetic deliveries, so your entire money path is testable offline:
+accepts synthetic deliveries built with `pay.MemEvent`, so your entire money
+path is testable offline. This test posts a purchase twice, the way a
+processor redelivers, and checks that the wallet moved once:
 
 ```go
-fake := &pay.MemProvider{Secret: "shh"}
+func TestTopUpCredits(t *testing.T) {
+	book := ledger.NewMemStore()
+	wallet := ledger.NewHolder("user", "ada@example.com")
+	fake := &pay.MemProvider{Secret: "shh"}
 
-h := pay.WebhookHandler(fake, credit)
-body := pay.MemEvent(pay.KindPaid, "pi_1", 20*money.Dollar, meta)
-req.Header.Set(pay.MemHeader, "shh")
-h.ServeHTTP(rec, req)
+	h := pay.WebhookHandler(fake, func(ctx context.Context, e pay.Event) error {
+		if e.Kind != pay.KindPaid {
+			return nil
+		}
+		return book.Credit(ctx, ledger.Posting{
+			Holder: ledger.Holder(e.Meta["holder"]),
+			Amount: e.Gross,
+			Reason: "topup",
+			Ref:    e.Ref,
+		})
+	})
+
+	body := pay.MemEvent(pay.KindPaid, "pi_1", 20*money.Dollar,
+		map[string]string{"holder": string(wallet)})
+	for range 2 { // the second delivery is a replay and credits nothing
+		req := httptest.NewRequest(http.MethodPost, "/webhooks/pay", bytes.NewReader(body))
+		req.Header.Set(pay.MemHeader, "shh")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d", rec.Code)
+		}
+	}
+
+	got, err := book.Balance(context.Background(), wallet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 20*money.Dollar {
+		t.Fatalf("balance %s, want $20.00", got.String(money.USD))
+	}
+}
 ```
 
-Configure `Caps` to test the paths where your product has to cope with a
-processor that cannot do something.
+Set `Caps` on the fake to test the paths where your product has to cope with a
+processor that cannot do something, `Unconfigured` to test a deployment with no
+keys, and `ChargeResult` or `ChargeErr` to drive an off-session charge to each
+of its outcomes.
 
 ## Next
 
-- [The money model](money-model.md) — why a balance is a fold, in depth
-- [Webhooks](webhooks.md) — the delivery contract
-- [Running Stripe](stripe-operations.md) — the account settings that change what a customer is charged
+- [The money model](money-model.md): why a balance is a fold, in depth
+- [Webhooks](webhooks.md): the delivery contract
+- [Running Stripe](stripe-operations.md): the account settings that change what a customer is charged

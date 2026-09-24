@@ -5,16 +5,16 @@ account configured correctly, and the settings below change what a customer is
 actually charged.
 
 What an operator sets up, and what a developer runs locally. Written for
-this component's surface: **one-off top-ups, refunds, and a saved method
+what the adapter supports: **one-off top-ups, refunds, and a saved method
 for auto-recharge.** Not subscriptions.
 
 ## One account, several endpoints
 
-`pay` is a library each product embeds, so several services take payment
-against **one Stripe account**. Stripe allows many webhook endpoints, so
-each product registers its own with its own signing secret. A product's
-secret must never be shared with another: a leaked secret then forges
-deliveries only for the service it belongs to.
+`pay` is a library each product embeds, so several services can take
+payment against **one Stripe account**. Stripe allows many webhook
+endpoints, so each product registers its own with its own signing secret.
+A product's secret must never be shared with another: a leaked secret then
+forges deliveries only for the service it belongs to.
 
 ## Products and prices
 
@@ -59,12 +59,22 @@ charged differ from the amount quoted:
   someone who does not know what it breaks.
 - **Adaptive Pricing.** Leave on. It is how a EUR customer sees euros
   while the charge is created in USD, and it is why the ledger never
-  holds a non-USD amount. The USD a EUR charge is actually worth comes
-  from the charge's balance transaction, not from a rate we look up.
+  holds a non-USD amount. The USD a converted charge is worth comes from
+  the session's `currency_conversion`, which is Stripe's own rate on that
+  charge, not a rate looked up afterwards.
 
-Automatic Tax stays **off** until a VAT spec says otherwise. When it is
-turned on, `TaxMode` on the checkout params is what carries the change,
-and the tax figures arrive on the `Event`.
+**Create every checkout in USD.** An empty `Currency` means USD. The
+adapter accepts `money.EUR` as a checkout currency, but a paid session
+that was not created in USD is refused when its webhook arrives, because
+the ledger holds micro-USD only: the customer is charged and nothing is
+credited. Let Adaptive Pricing present the local currency instead.
+
+**Automatic Tax is off by default.** A checkout's total is then exactly the
+amount the product quoted. To turn it on, set `Tax: true` in
+`stripe.Config`, which makes the adapter declare `pay.CapTax`, and create
+each checkout that should be taxed with `Tax: pay.TaxAutomatic`. The tax
+and net figures then arrive on the `Event`. Both are needed: a checkout
+asking for tax on an adapter configured without it is created untaxed.
 
 ## The local loop
 
@@ -94,7 +104,7 @@ Test mode only; they never move real money.
 | Card | Behavior |
 |---|---|
 | `4242 4242 4242 4242` | Succeeds immediately |
-| `4000 0025 0000 3155` | 3D Secure challenge, which is the `requires_action` path |
+| `4000 0025 0000 3155` | Requires 3-D Secure: Checkout shows the challenge, and an off-session `ChargeSaved` reports `ChargePending` |
 | `4000 0000 0000 0002` | Declined, which must map to `ErrDeclined` and never retry |
 | `4100 0000 0000 0019` | Radar fraud block |
 
@@ -133,11 +143,15 @@ Stripe account holds. That reconciliation is the whole point of
 
 ## Secrets
 
-Two per product: the API key and that product's webhook signing secret.
-There is no publishable key to deploy, because checkout is hosted and the
-browser never talks to Stripe directly.
+Two per product: the API key, which goes in `stripe.Config.SecretKey`, and
+that product's webhook signing secret, which goes in
+`stripe.Config.WebhookSecret`. There is no publishable key to deploy,
+because checkout is hosted and the browser never talks to Stripe directly.
 
-Terraform manages no Stripe resource anywhere in the family today, and
-both existing secrets are provisioned out of band into k8s Secrets named
-in no manifest. `pay` should not inherit that silence: either a terraform
-resource, or a written procedure. Not neither.
+Keep both in your secret store, never in source or in a manifest, and
+record where they live and how they are rotated, whether as code in your
+infrastructure tooling or as a written procedure. The adapter verifies
+against one signing secret. When you roll it in the Stripe dashboard, keep
+the old secret valid until the new one is deployed; a delivery that arrives
+while the two sides disagree fails verification, and that purchase charges
+without crediting until Stripe redelivers it.

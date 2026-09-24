@@ -10,14 +10,16 @@ without reading it.
 type Provider interface {
     Name() Name
     Has(c Capability) bool
-    CreateCheckout(ctx, CheckoutParams) (Checkout, error)
-    EnsureCustomer(ctx, email string, meta map[string]string) (CustomerRef, error)
-    ChargeSaved(ctx, SavedChargeParams) (Charge, error)
+    CreateCheckout(ctx context.Context, p CheckoutParams) (Checkout, error)
+    EnsureCustomer(ctx context.Context, email string, meta map[string]string) (CustomerRef, error)
+    ChargeSaved(ctx context.Context, p SavedChargeParams) (Charge, error)
     ParseWebhook(payload []byte, h http.Header) (Event, error)
 }
 ```
 
-Your adapter is the **only** place the vendor exists.
+Your adapter is the **only** place the vendor exists. `Name` is recorded in the
+actor string of the ledger entries a product writes, so choose one stable
+lowercase name, such as `pay.Name("adyen")`, and never change it.
 
 ```mermaid
 flowchart TD
@@ -91,15 +93,19 @@ that everything else returns `ErrUnsupported`.
 Most of an adapter only runs against the vendor, which is why vendor code tends
 to sit at half-covered. The fix is to replace the SDK's transport with one
 pointing at an `httptest.Server` returning recorded payloads. The Stripe adapter
-here reaches 100% that way, and it covers request shaping — the nested form
+here reaches 100% that way, and it covers request shaping: the nested form
 encoding that breaks silently on an SDK bump.
 
 Sign webhook fixtures yourself rather than reaching for the network. For an
 HMAC scheme that is a few lines, and it lets you test the bad-signature and
 stale-timestamp paths that a live account will not produce on demand.
 
-Fuzz `ParseWebhook`. It takes unconstrained bytes from the internet; the two
-worst bugs found in this library's own adapter came from a fuzzer, not review.
+Fuzz `ParseWebhook`. It takes unconstrained bytes from the internet. Sign each
+fuzz input with the test secret, or every input dies at the signature check and
+the decoding behind it is never reached. Fuzzing the Stripe adapter that way
+found two bugs review had missed: a verified event with no `data` member
+crashed the endpoint, and a paid session with no payment intent produced a
+credit the ledger had no reference to dedupe on.
 
 ## Writing a ledger store instead
 
@@ -111,5 +117,5 @@ replayed rollups fold identically, and a failed unit of work moves nothing.
 
 If your store needs to enlist in the caller's transaction, expose that as a
 method on the concrete type rather than the interface, the way
-`pgledger.Bind(pgx.Tx)` does. A driver handle cannot cross an interface that an
+`(*pgledger.Store).Bind(tx pgx.Tx)` does. A driver handle cannot cross an interface that an
 in-memory store also satisfies.

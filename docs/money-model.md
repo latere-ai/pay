@@ -86,7 +86,7 @@ stateDiagram-v2
     [*] --> Held: Hold(group, reserve)
     Held --> Settled: Settle(group, cost)
     Settled --> [*]
-    Settled --> Corrected: Adjust(group, delta)
+    Settled --> Corrected: Adjust(posting, up)
     Corrected --> [*]
 ```
 
