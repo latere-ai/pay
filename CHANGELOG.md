@@ -18,6 +18,16 @@ committed: the commit log already holds that.
   nothing was credited. `ChargeSaved` refuses the same way. A customer abroad
   still pays in their own currency through Adaptive Pricing on a USD checkout,
   which is unchanged.
+- An off-session charge that needed 3-D Secure is now credited. `ChargeSaved`
+  reports such a charge as `pay.ChargePending` and says to wait for the
+  webhook, but the Stripe adapter ignored `payment_intent.succeeded`, so the
+  charge completed and nothing was credited. That event is now `pay.KindPaid`,
+  with the `Ref` that `ChargeSaved` returned as `Charge.Ref` and the `Meta` it
+  was given, so a charge credited on its synchronous success and again from
+  its delivery posts once. Subscribe the webhook endpoint to
+  `payment_intent.succeeded`. Only intents `ChargeSaved` created are credited:
+  it marks them with the metadata `pay_origin: saved_method`, and the intent
+  behind a checkout is left to its session.
 
 ### Changed
 

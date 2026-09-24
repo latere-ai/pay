@@ -35,6 +35,11 @@ const (
 	eventDisputeCreated   = "charge.dispute.created"
 	// eventPaymentFailed is auto-recharge telemetry, never a ledger write.
 	eventPaymentFailed = "payment_intent.payment_failed"
+	// eventIntentSucceeded completes an off-session charge that ChargeSaved
+	// reported as pending on a 3-D Secure challenge. It is also delivered for
+	// the intent behind every checkout session, which the session events
+	// credit instead.
+	eventIntentSucceeded = "payment_intent.succeeded"
 )
 
 // ParseWebhook authenticates a delivery and reduces it to a pay.Event.
@@ -67,6 +72,8 @@ func (a *Adapter) ParseWebhook(payload []byte, h http.Header) (pay.Event, error)
 		return disputed(raw, payload)
 	case eventPaymentFailed:
 		return paymentFailed(raw, payload)
+	case eventIntentSucceeded:
+		return intentSucceeded(raw, payload)
 	default:
 		return ignored(payload), nil
 	}
@@ -179,6 +186,47 @@ func sessionGross(s *stripe.CheckoutSession) (money.Micro, error) {
 		return 0, fmt.Errorf("%w: session %s is in %s", ErrNotUSD, s.ID, cur)
 	}
 	return money.FromMinor(minor, money.USD), nil
+}
+
+// intentSucceeded credits an off-session charge ChargeSaved created, and
+// nothing else.
+//
+// Only an intent carrying the marker ChargeSaved writes is a credit. The intent
+// behind a checkout session carries none of the session's metadata, so
+// crediting it would post whichever of its two deliveries came first, with no
+// holder and no quoted credit; it is ignored and its session credits it. Ref
+// is the intent's id, which ChargeSaved returned as Charge.Ref: a redelivery,
+// or a caller that credited a synchronous success under Charge.Ref, posts
+// under a reference the ledger has already seen.
+func intentSucceeded(raw, payload []byte) (pay.Event, error) {
+	var pi stripe.PaymentIntent
+	if err := json.Unmarshal(raw, &pi); err != nil {
+		return pay.Event{}, fmt.Errorf("pay/stripe: decode payment intent: %w", err)
+	}
+	if pi.Metadata[metaOrigin] != originSavedMethod {
+		return ignored(payload), nil
+	}
+	if pi.ID == "" {
+		return pay.Event{}, fmt.Errorf("%w: a succeeded off-session charge", ErrNoReference)
+	}
+	if cur := money.Currency(pi.Currency); cur != money.USD {
+		// Fail closed, as a session does. ChargeSaved creates USD intents only,
+		// so this is an intent created elsewhere with the marker copied onto it.
+		return pay.Event{}, fmt.Errorf("%w: payment intent %s is in %s", ErrNotUSD, pi.ID, cur)
+	}
+	e := pay.Event{
+		Kind:     pay.KindPaid,
+		Provider: pay.Stripe,
+		Email:    cmp.Or(pi.Metadata["email"], pi.ReceiptEmail),
+		Ref:      pi.ID,
+		Gross:    money.FromMinor(pi.AmountReceived, money.USD),
+		Meta:     pi.Metadata,
+		Raw:      payload,
+	}
+	if pi.Customer != nil && pi.Customer.ID != "" {
+		e.Customer = pay.CustomerRef{Provider: pay.Stripe, ID: pi.Customer.ID}
+	}
+	return e, nil
 }
 
 // sessionEmail prefers the metadata the app wrote, because that is the identity

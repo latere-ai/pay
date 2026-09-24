@@ -66,6 +66,19 @@ var ErrNoReference = errors.New("pay/stripe: delivery carries no reference to de
 // site.
 const setupFutureUsageOffSession = "off_session"
 
+// metaOrigin and originSavedMethod are the metadata ChargeSaved writes on every
+// intent it creates, and what payment_intent.succeeded is credited on.
+//
+// Stripe delivers that event for every intent that succeeds, including the
+// one behind each checkout session, and the PaymentIntent object has no field
+// that tells an off-session charge from a checkout's. The marker is how the
+// webhook credits the first and leaves the second to its session. The key and
+// value are on the wire and on intents already created, so they do not change.
+const (
+	metaOrigin        = "pay_origin"
+	originSavedMethod = "saved_method"
+)
+
 // defaultProductName is the line item's name on the payment page when the
 // caller's CheckoutParams carry no Description.
 const defaultProductName = "credit"
@@ -314,11 +327,14 @@ func escapeQuery(s string) string {
 // This is what auto-recharge runs on. Three outcomes matter and they are not
 // interchangeable: a success credits, a decline is pay.ErrDeclined and must
 // never be retried, and an authentication challenge is pay.ChargePending with a
-// webhook to follow. Off-session 3-D Secure does not arrive as a 200 with a
-// requires_action intent; Stripe returns a 402 card_error whose code is
-// authentication_required, so that code is separated before the generic decline
-// mapping. Getting that wrong turns every EU challenge into a permanent
-// decline.
+// webhook to follow. That webhook is payment_intent.succeeded, reduced to
+// pay.KindPaid under the intent's id, which is also Charge.Ref, so a success
+// credited here and again from its delivery posts once.
+//
+// Off-session 3-D Secure does not arrive as a 200 with a requires_action
+// intent; Stripe returns a 402 card_error whose code is authentication_required,
+// so that code is separated before the generic decline mapping. Getting that
+// wrong turns every EU challenge into a permanent decline.
 func (a *Adapter) ChargeSaved(ctx context.Context, p pay.SavedChargeParams) (pay.Charge, error) {
 	if !a.configured {
 		return pay.Charge{}, pay.ErrUnconfigured
@@ -352,6 +368,10 @@ func (a *Adapter) ChargeSaved(ctx context.Context, p pay.SavedChargeParams) (pay
 	for k, v := range p.Meta {
 		params.AddMetadata(k, v)
 	}
+	// After the caller's metadata, so no caller key can replace it: the marker
+	// is what credits this intent from payment_intent.succeeded, and a charge
+	// that needed 3-D Secure has no other way to be credited.
+	params.AddMetadata(metaOrigin, originSavedMethod)
 	params.SetIdempotencyKey(p.IdempotencyKey)
 	pi, err := a.sc.V1PaymentIntents.Create(ctx, params)
 	if err != nil {

@@ -208,6 +208,29 @@ func TestParseWebhook_RefusesToCreditANonUSDSession(t *testing.T) {
 	}
 }
 
+func TestParseWebhook_RefusesToCreditANonUSDIntent(t *testing.T) {
+	// ChargeSaved creates USD intents only, so a marked intent in another
+	// currency was created elsewhere. Crediting its minor units as USD would be
+	// wrong by the exchange rate, so it fails closed as a session does.
+	a := newAdapter(t, newStub(t))
+	payload := eventPayload(t, eventIntentSucceeded, map[string]any{
+		"id":              "pi_eur",
+		"object":          "payment_intent",
+		"status":          "succeeded",
+		"amount_received": 460,
+		"currency":        "eur",
+		"metadata":        map[string]string{metaOrigin: originSavedMethod},
+	})
+
+	ev, err := a.ParseWebhook(payload, signedNow(payload))
+	if !errors.Is(err, ErrNotUSD) {
+		t.Fatalf("ParseWebhook on a EUR intent = %v, want ErrNotUSD", err)
+	}
+	if ev.Kind != pay.KindIgnored {
+		t.Errorf("Kind = %q; a refused intent must credit nothing", ev.Kind)
+	}
+}
+
 func TestParseWebhook_FallsBackForEmailAndReference(t *testing.T) {
 	s := map[string]any{
 		"id":               "cs_no_intent",
@@ -312,11 +335,47 @@ func TestParseWebhook_PaymentFailedIsTelemetryNotALedgerWrite(t *testing.T) {
 	}
 }
 
+// TestParseWebhook_ACheckoutsIntentLeavesTheCreditToItsSession pins which
+// payment_intent.succeeded deliveries credit. Stripe sends one for the intent
+// behind every checkout session too, carrying none of the session's metadata:
+// crediting it would post whichever delivery came first, with no holder and no
+// quoted credit. The session's own delivery credits the purchase, under the
+// same reference.
+func TestParseWebhook_ACheckoutsIntentLeavesTheCreditToItsSession(t *testing.T) {
+	a := newAdapter(t, newStub(t))
+	intent := eventPayload(t, "payment_intent.succeeded", map[string]any{
+		"id":              "pi_test_1",
+		"object":          "payment_intent",
+		"status":          "succeeded",
+		"amount":          2000,
+		"amount_received": 2000,
+		"currency":        "usd",
+		"customer":        "cus_test_1",
+	})
+
+	ev, err := a.ParseWebhook(intent, signedNow(intent))
+	if err != nil {
+		t.Fatalf("ParseWebhook: %v", err)
+	}
+	if ev.Kind != pay.KindIgnored {
+		t.Errorf("a checkout's own intent produced %q; its session is what credits it", ev.Kind)
+	}
+
+	session := eventPayload(t, eventSessionCompleted, paidSession())
+	ev, err = a.ParseWebhook(session, signedNow(session))
+	if err != nil {
+		t.Fatalf("ParseWebhook: %v", err)
+	}
+	if ev.Kind != pay.KindPaid || ev.Ref != "pi_test_1" {
+		t.Errorf("session event = %q %q, want paid pi_test_1", ev.Kind, ev.Ref)
+	}
+}
+
 func TestParseWebhook_ReportsAnUndecodableObject(t *testing.T) {
 	// Every modeled branch decodes its object. A payload that verifies but
 	// carries the wrong shape is an error rather than a silent zero event: an
 	// event that cannot be read is not an event that moved no money.
-	for _, typ := range []string{eventSessionCompleted, eventSessionAsyncPaid, eventChargeRefunded, eventDisputeCreated, eventPaymentFailed} {
+	for _, typ := range []string{eventSessionCompleted, eventSessionAsyncPaid, eventChargeRefunded, eventDisputeCreated, eventPaymentFailed, eventIntentSucceeded} {
 		t.Run(typ, func(t *testing.T) {
 			a := newAdapter(t, newStub(t))
 			// A well-formed envelope whose object has an id of the wrong type.
@@ -367,6 +426,14 @@ func TestParseWebhook_RefusesADeliveryWithNothingToDedupeOn(t *testing.T) {
 			obj:  map[string]any{"object": "checkout.session", "payment_status": "paid", "currency": "usd"},
 		},
 		{
+			name: "a succeeded off-session charge with no id",
+			typ:  eventIntentSucceeded,
+			obj: map[string]any{
+				"object": "payment_intent", "status": "succeeded", "amount_received": 500, "currency": "usd",
+				"metadata": map[string]string{metaOrigin: originSavedMethod},
+			},
+		},
+		{
 			name: "a refund with no purchase to reverse",
 			typ:  eventChargeRefunded,
 			obj:  map[string]any{"id": "ch_1", "object": "charge", "currency": "usd", "amount_refunded": 100},
@@ -405,7 +472,7 @@ func TestParseWebhook_AnEventWithNoDataMemberDoesNotPanic(t *testing.T) {
 	a := newAdapter(t, newStub(t))
 	for _, typ := range []string{
 		eventSessionCompleted, eventSessionAsyncPaid, eventChargeRefunded,
-		eventDisputeCreated, eventPaymentFailed, "customer.discount.created",
+		eventDisputeCreated, eventPaymentFailed, eventIntentSucceeded, "customer.discount.created",
 	} {
 		t.Run(typ, func(t *testing.T) {
 			payload := []byte(`{"object":"event","type":"` + typ + `"}`)

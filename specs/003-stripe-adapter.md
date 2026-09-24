@@ -253,3 +253,29 @@ so neither calls Stripe. `ChargeSaved` is included because an intent created
 in EUR is refused the same way when its success is delivered. Adaptive
 Pricing is untouched: the session is created in USD and presented in the
 customer's currency, and `currency_conversion` still carries the USD total.
+
+### `payment_intent.succeeded` credits a saved-method charge
+
+`ChargePending` told the caller to wait for the webhook, and no subscribed
+event credited an off-session intent: a charge that needed 3-D Secure
+completed and nothing posted. `ParseWebhook` now maps a sixth event,
+`payment_intent.succeeded`, to `KindPaid` under the intent's id.
+
+Stripe sends that event for every intent that succeeds, including the one
+behind each checkout session, and the PaymentIntent object has no field that
+tells an off-session charge from a checkout's. A checkout's intent carries
+none of the session's metadata, so crediting it would post whichever delivery
+came first, with no holder and no quoted credit, and the ledger's dedupe would
+then keep that one. `ChargeSaved` therefore writes `pay_origin: saved_method`
+on every intent, after the caller's metadata so no caller key replaces it, and
+only a marked intent credits. Crediting every succeeded intent and leaving
+each consumer's handler to drop the one without metadata was rejected: it
+makes correctness depend on every handler.
+
+Exactly once rests on the ledger's unique reference. The intent's id is
+`Charge.Ref`, the `Ref` a checkout session reports for the same intent, and
+the `Ref` every redelivery carries, so a caller that credits a synchronous
+`ChargeSucceeded` under `Charge.Ref` and then handles the delivery posts once.
+
+An intent created before this change carries no marker and is not credited
+from the webhook. No consumer called `ChargeSaved` when it landed.

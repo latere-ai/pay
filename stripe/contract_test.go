@@ -150,6 +150,10 @@ func FuzzParseWebhook(f *testing.F) {
 	}))
 	f.Add(eventPayload(f, eventDisputeCreated, map[string]any{"id": "dp_1", "payment_intent": "pi_1"}))
 	f.Add(eventPayload(f, eventPaymentFailed, map[string]any{"id": "pi_1"}))
+	f.Add(eventPayload(f, eventIntentSucceeded, map[string]any{
+		"id": "pi_1", "amount_received": 500, "currency": "usd",
+		"metadata": map[string]string{metaOrigin: originSavedMethod},
+	}))
 	f.Add([]byte(`{"type":"checkout.session.completed","data":{"object":{}}}`))
 	f.Add([]byte(`{}`))
 	f.Add([]byte(``))

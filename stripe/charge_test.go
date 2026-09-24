@@ -6,7 +6,10 @@ package stripe
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 
 	stripe "github.com/stripe/stripe-go/v85"
@@ -274,5 +277,157 @@ func TestChargeSaved_RefusesWhatItCannotChargeSafely(t *testing.T) {
 				t.Errorf("the charge reached Stripe anyway: %d calls", n)
 			}
 		})
+	}
+}
+
+// intentFrom is the object payment_intent.succeeded carries once the create c
+// succeeds. Its metadata is what the adapter put on the wire, read back from
+// the request, so a test built on it proves the webhook recognizes the
+// intents ChargeSaved actually creates.
+func intentFrom(t *testing.T, c call, id string) map[string]any {
+	t.Helper()
+	amount, err := strconv.ParseInt(c.form.Get("amount"), 10, 64)
+	if err != nil {
+		t.Fatalf("amount %q: %v", c.form.Get("amount"), err)
+	}
+	meta := map[string]string{}
+	for k, v := range c.form {
+		if name, ok := strings.CutPrefix(k, "metadata["); ok {
+			meta[strings.TrimSuffix(name, "]")] = v[0]
+		}
+	}
+	return map[string]any{
+		"id":              id,
+		"object":          "payment_intent",
+		"status":          "succeeded",
+		"amount":          amount,
+		"amount_received": amount,
+		"currency":        c.form.Get("currency"),
+		"customer":        c.form.Get("customer"),
+		"metadata":        meta,
+	}
+}
+
+// TestChargeSaved_AChallengedChargeCreditsOnceItSucceeds pins the webhook that
+// ChargePending tells a caller to wait for.
+//
+// An off-session charge the bank challenges with 3-D Secure returns
+// ChargePending, and the caller must not credit it. When the customer
+// authenticates, Stripe delivers payment_intent.succeeded; were that ignored,
+// the charge would complete and never credit. Every credit it produces carries
+// the intent's id, which is Charge.Ref, so a redelivery, or a caller that also
+// credited under Charge.Ref, posts under a reference the ledger has already
+// seen.
+func TestChargeSaved_AChallengedChargeCreditsOnceItSucceeds(t *testing.T) {
+	s := newStub(t)
+	s.on(http.MethodPost, intentsPath, func(w http.ResponseWriter, _ *http.Request) {
+		writeStripeError(w, http.StatusPaymentRequired, stripe.ErrorTypeCard, stripe.ErrorCodeAuthenticationRequired,
+			"This payment requires authentication.", func(body map[string]any) {
+				body["payment_intent"] = map[string]any{"id": "pi_3ds", "object": "payment_intent", "status": "requires_action"}
+			})
+	})
+	a := newAdapter(t, s)
+
+	charge, err := a.ChargeSaved(context.Background(), recharge())
+	if err != nil || charge.Status != pay.ChargePending {
+		t.Fatalf("charge = %+v, err = %v; want pending", charge, err)
+	}
+	succeeded := intentFrom(t, s.calledOnce(http.MethodPost, intentsPath), charge.Ref)
+	challenged := maps.Clone(succeeded)
+	challenged["status"] = "requires_action"
+	challenged["amount_received"] = 0
+
+	var credits []pay.Event
+	h := pay.WebhookHandler(a, func(_ context.Context, e pay.Event) error {
+		if e.Kind == pay.KindPaid {
+			credits = append(credits, e)
+		}
+		return nil
+	})
+	for _, payload := range [][]byte{
+		// The challenge, before the customer answers it.
+		eventPayload(t, "payment_intent.requires_action", challenged),
+		// The customer authenticated. Stripe delivers the success, and may
+		// deliver it again.
+		eventPayload(t, "payment_intent.succeeded", succeeded),
+		eventPayload(t, "payment_intent.succeeded", succeeded),
+		// The charge underneath the same payment.
+		eventPayload(t, "charge.succeeded", map[string]any{
+			"id": "ch_3ds", "object": "charge", "amount": 500, "currency": "usd", "payment_intent": charge.Ref,
+		}),
+	} {
+		if rec := serveHandler(t, h, a, payload); rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+	}
+
+	if len(credits) == 0 {
+		t.Fatal("the charge succeeded and nothing credited: ChargePending said to wait for a webhook that never credits")
+	}
+	for _, e := range credits {
+		// One reference across every delivery is what the ledger credits once.
+		if e.Ref != charge.Ref {
+			t.Errorf("Ref = %q, want %q, the reference ChargeSaved returned; the ledger would credit this payment twice", e.Ref, charge.Ref)
+		}
+		if e.Gross != 5*money.Dollar {
+			t.Errorf("Gross = %v, want %v", e.Gross, 5*money.Dollar)
+		}
+		if e.Meta["credited_micro"] != "4700000" {
+			t.Errorf("Meta = %v; the credit the caller computed before the charge must come back", e.Meta)
+		}
+		if want := (pay.CustomerRef{Provider: pay.Stripe, ID: "cus_test_1"}); e.Customer != want {
+			t.Errorf("Customer = %+v, want %+v", e.Customer, want)
+		}
+	}
+}
+
+// TestChargeSaved_AnImmediateSuccessAndItsWebhookShareOneReference pins the
+// other way to the same delivery. A charge that goes through at once returns
+// ChargeSucceeded, and the caller credits it under Charge.Ref; Stripe still
+// delivers payment_intent.succeeded for it. Whatever that delivery becomes, a
+// credit under any other reference would post the payment twice.
+func TestChargeSaved_AnImmediateSuccessAndItsWebhookShareOneReference(t *testing.T) {
+	s := newStub(t)
+	s.json(http.MethodPost, intentsPath, map[string]any{
+		"id": "pi_ok", "object": "payment_intent", "status": "succeeded",
+	})
+	a := newAdapter(t, s)
+
+	charge, err := a.ChargeSaved(context.Background(), recharge())
+	if err != nil || charge.Status != pay.ChargeSucceeded {
+		t.Fatalf("charge = %+v, err = %v; want succeeded", charge, err)
+	}
+	payload := eventPayload(t, "payment_intent.succeeded", intentFrom(t, s.calledOnce(http.MethodPost, intentsPath), charge.Ref))
+	ev, err := a.ParseWebhook(payload, signedNow(payload))
+	if err != nil {
+		t.Fatalf("ParseWebhook: %v", err)
+	}
+	if ev.Kind == pay.KindPaid && ev.Ref != charge.Ref {
+		t.Errorf("Ref = %q, want %q; the caller's credit and this one would both post", ev.Ref, charge.Ref)
+	}
+}
+
+// TestChargeSaved_MarksTheIntentItCreates pins the metadata that tells the
+// webhook an intent is a saved-method charge. A caller's own metadata may not
+// remove it: an intent without it is never credited from payment_intent.succeeded,
+// so a charge that needed 3-D Secure would not credit at all.
+func TestChargeSaved_MarksTheIntentItCreates(t *testing.T) {
+	s := newStub(t)
+	s.json(http.MethodPost, intentsPath, map[string]any{
+		"id": "pi_ok", "object": "payment_intent", "status": "succeeded",
+	})
+	a := newAdapter(t, s)
+
+	p := recharge()
+	p.Meta = map[string]string{"credited_micro": "4700000", "pay_origin": "caller"}
+	if _, err := a.ChargeSaved(context.Background(), p); err != nil {
+		t.Fatalf("ChargeSaved: %v", err)
+	}
+	form := s.calledOnce(http.MethodPost, intentsPath).form
+	if got := form.Get("metadata[pay_origin]"); got != "saved_method" {
+		t.Errorf("metadata[pay_origin] = %q, want saved_method", got)
+	}
+	if got := form.Get("metadata[credited_micro]"); got != "4700000" {
+		t.Errorf("metadata[credited_micro] = %q; the caller's own metadata must still ride along", got)
 	}
 }

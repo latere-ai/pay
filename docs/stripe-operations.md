@@ -38,6 +38,7 @@ reduces to `KindIgnored` and the handler acknowledges.
 | `charge.refunded` | Reverse the credit |
 | `charge.dispute.created` | Reverse the credit |
 | `payment_intent.payment_failed` | Auto-recharge telemetry; not a ledger write |
+| `payment_intent.succeeded` | An off-session `ChargeSaved` that needed 3-D Secure. Credit once the customer authenticates |
 
 The first two are the pair that make an async purchase credit **once**:
 `completed` for a SEPA payment is not `paid`, so it is ignored, and the
@@ -45,6 +46,13 @@ The first two are the pair that make an async purchase credit **once**:
 the ledger dedupes on. Subscribing to only one of them is a live bug in
 either direction: drop the first and a card purchase never credits; drop
 the second and an EU bank transfer never does.
+
+`payment_intent.succeeded` is how a saved-method charge that returned
+`ChargePending` is credited; without it, that charge completes and
+nothing posts. Stripe sends it for every payment, checkouts included, and
+the adapter credits only the intents `ChargeSaved` created, which it marks
+with the metadata `pay_origin: saved_method`. A checkout's own intent is
+ignored and its session credits it, under the same payment intent.
 
 ## Account settings that change what a customer is charged
 
@@ -105,13 +113,14 @@ Test mode only; they never move real money.
 | Card | Behavior |
 |---|---|
 | `4242 4242 4242 4242` | Succeeds immediately |
-| `4000 0025 0000 3155` | Requires 3-D Secure: Checkout shows the challenge, and an off-session `ChargeSaved` reports `ChargePending` |
+| `4000 0025 0000 3155` | Requires 3-D Secure: Checkout shows the challenge, and an off-session `ChargeSaved` reports `ChargePending`, then credits through `payment_intent.succeeded` once the customer authenticates |
 | `4000 0000 0000 0002` | Declined, which must map to `ErrDeclined` and never retry |
 | `4100 0000 0000 0019` | Radar fraud block |
 
 Any future expiry, any CVC. The 3DS card is the one worth wiring into an
-end-to-end test: `ChargeSaved` returning `ChargePending` is the branch
-most likely to be written wrong and never exercised.
+end-to-end test: `ChargeSaved` returning `ChargePending`, and the credit
+arriving later on the webhook, is the branch most likely to be written
+wrong and never exercised.
 
 ## Rollout
 

@@ -72,7 +72,9 @@ redelivery. Refuse it instead. Same for a currency you cannot convert.
 **5. A decline is not a transport error.** Map a refusal to `pay.ErrDeclined`
 and never retry it. Map an authentication challenge to `ChargePending` and wait
 for the webhook. Conflating them either double-charges or turns every 3-D
-Secure prompt into a permanent decline.
+Secure prompt into a permanent decline. When a pending charge succeeds, deliver
+it as `KindPaid` with the `Charge.Ref` you returned as its `Ref`, so a consumer
+that also credited a synchronous success under that reference posts once.
 
 ## Prove it
 

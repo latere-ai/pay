@@ -59,7 +59,7 @@ parses vendor JSON.
 
 | Kind | Meaning | What to do |
 |---|---|---|
-| `KindPaid` | Money received | `Credit`, keyed on `Ref` |
+| `KindPaid` | Money received: a checkout paid, or an off-session charge succeeded | `Credit`, keyed on `Ref` |
 | `KindRefunded` | Refunded | `Reverse`, keyed on `ReversalRef` |
 | `KindDisputed` | Charged back | `Reverse`, keyed on `ReversalRef` |
 | `KindPaymentFailed` | A charge did not go through | Reaches your handler for telemetry or to notify the customer. Never a ledger write; return `nil` |
@@ -100,6 +100,39 @@ rather than the only one.
 If you subscribe to only one of those two events you have a live bug in one
 direction or the other: drop the first and card purchases never credit, drop the
 second and bank transfers never do.
+
+## An off-session charge
+
+`ChargeSaved` charges a saved method with nobody present, and it succeeds in
+one of two ways. A charge that goes through at once returns `ChargeSucceeded`.
+A charge the bank challenges with 3-D Secure returns `ChargePending`: the
+customer has to authenticate, and the success arrives later as a `KindPaid`
+delivery.
+
+```mermaid
+sequenceDiagram
+    participant App as Your app
+    participant S as Processor
+    participant You as Your handler
+
+    App->>S: ChargeSaved
+    S-->>App: ChargePending, Charge.Ref pi_2
+    Note over S: the customer authenticates
+    S->>You: KindPaid, ref pi_2
+```
+
+The delivery's `Ref` is the charge's `Charge.Ref`, and its `Meta` is the `Meta`
+you passed to `ChargeSaved`. So:
+
+- Credit a `ChargeSucceeded` straight away, under `Charge.Ref`. The processor
+  may still deliver a `KindPaid` for it; that one carries the same `Ref`, and
+  the ledger posts nothing the second time.
+- Never credit a `ChargePending`. Its credit comes from the delivery.
+
+Put the same keys in `SavedChargeParams.Meta` that your handler reads from a
+checkout's `Meta`, and one handler credits both. With Stripe, the endpoint has
+to be subscribed to `payment_intent.succeeded`; see
+[Running Stripe](stripe-operations.md).
 
 ## Idempotency is not optional
 
