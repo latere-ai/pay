@@ -10,6 +10,10 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Security
+
+- Built with Go 1.27.2, which fixes GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617.
+
 ## v0.2.0 - 2026-09-24
 
 ### Fixed
