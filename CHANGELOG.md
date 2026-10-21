@@ -14,6 +14,11 @@ committed: the commit log already holds that.
 
 - Built with Go 1.27.2, which fixes GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617.
 
+### Fixed
+
+- **Built with Go 1.27.3,** which fixes GO-2026-6809, a flaw in the
+  standard library's certificate verification that this code can reach.
+
 ## v0.2.0 - 2026-09-24
 
 ### Fixed
