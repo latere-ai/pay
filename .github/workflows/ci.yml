@@ -38,7 +38,7 @@ jobs:
       GOTOOLCHAIN: local
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_PASSWORD: pay
           POSTGRES_USER: pay
@@ -48,8 +48,8 @@ jobs:
           --health-timeout 5s --health-retries 10
         ports: ['5432:5432']
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: test with race
