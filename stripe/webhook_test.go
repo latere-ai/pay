@@ -77,6 +77,22 @@ func TestParseWebhook_RefusesAnUnsignedDelivery(t *testing.T) {
 	}
 }
 
+func TestParseWebhook_ABlankSecretVerifiesNothing(t *testing.T) {
+	// A secret of only whitespace passes New's emptiness check, so the adapter
+	// is configured. HMAC accepts any key, so a delivery signed with the same
+	// blank key would verify if the SDK used it; the SDK refuses the secret
+	// instead, and that refusal is an authentication failure, not a corrupt
+	// body.
+	const blank = " \t\n"
+	a := newAdapter(t, newStub(t), func(c *Config) { c.WebhookSecret = blank })
+	payload := eventPayload(t, eventSessionCompleted, paidSession())
+
+	_, err := a.ParseWebhook(payload, signedHeader(blank, payload, time.Now()))
+	if !errors.Is(err, pay.ErrBadSignature) {
+		t.Fatalf("ParseWebhook under a blank secret = %v, want ErrBadSignature", err)
+	}
+}
+
 func TestParseWebhook_ToleratesAnEndpointOnAnotherAPIVersion(t *testing.T) {
 	// Every fixture in this suite carries a 2019 api_version, so a passing run
 	// is a standing test that IgnoreAPIVersionMismatch is on. This one names

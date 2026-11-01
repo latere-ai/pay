@@ -18,6 +18,9 @@ committed: the commit log already holds that.
 
 - **Built with Go 1.27.3,** which fixes GO-2026-6809, a flaw in the
   standard library's certificate verification that this code can reach.
+- A webhook signing secret made only of whitespace now refuses every
+  delivery with `pay.ErrBadSignature`. Before, it was used as the signing
+  key, so a delivery signed with the same blank key verified.
 
 ### Changed
 

@@ -98,13 +98,15 @@ func eventObject(ev stripe.Event) []byte {
 // Both outcomes fail closed and both are terminal, so the distinction is for
 // whoever reads the log: a signature that did not verify is an authentication
 // problem worth investigating, and a body that did not parse is a corrupt
-// delivery that a redelivery might fix.
+// delivery that a redelivery might fix. A blank signing secret is the first
+// kind: nothing can be verified against it, and no redelivery changes that.
 func constructError(err error) error {
 	for _, sig := range []error{
 		webhook.ErrNotSigned,
 		webhook.ErrInvalidHeader,
 		webhook.ErrNoValidSignature,
 		webhook.ErrTooOld,
+		webhook.ErrEmptySecret,
 	} {
 		if errors.Is(err, sig) {
 			return fmt.Errorf("pay/stripe: %w: %w", pay.ErrBadSignature, err)
