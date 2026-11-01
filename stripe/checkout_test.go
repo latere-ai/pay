@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"testing"
 
-	stripe "github.com/stripe/stripe-go/v85"
+	stripe "github.com/stripe/stripe-go/v87"
 
 	"latere.ai/x/pay"
 	"latere.ai/x/pay/money"

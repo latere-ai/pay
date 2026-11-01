@@ -25,7 +25,7 @@ import (
 	"slices"
 	"strings"
 
-	stripe "github.com/stripe/stripe-go/v85"
+	stripe "github.com/stripe/stripe-go/v87"
 
 	"latere.ai/x/pay"
 	"latere.ai/x/pay/money"
@@ -61,9 +61,8 @@ var ErrNotUSD = errors.New("pay/stripe: amount is not in USD")
 var ErrNoReference = errors.New("pay/stripe: delivery carries no reference to dedupe on")
 
 // setupFutureUsageOffSession stores the method for a later charge with nobody
-// present. It is a plain string on the create params in stripe-go v85, so the
-// closed vocabulary is declared here rather than left as a literal at the call
-// site.
+// present. It is a plain string on the SDK's create params, so the closed
+// vocabulary is declared here rather than left as a literal at the call site.
 const setupFutureUsageOffSession = "off_session"
 
 // metaOrigin and originSavedMethod are the metadata ChargeSaved writes on every

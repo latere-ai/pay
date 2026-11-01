@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	stripe "github.com/stripe/stripe-go/v85"
+	stripe "github.com/stripe/stripe-go/v87"
 )
 
 // The harness. stripe-go lets a caller replace the HTTP backend, so the whole

@@ -19,6 +19,16 @@ committed: the commit log already holds that.
 - **Built with Go 1.27.3,** which fixes GO-2026-6809, a flaw in the
   standard library's certificate verification that this code can reach.
 
+### Changed
+
+- The Stripe adapter is built on stripe-go v87.1.0, up from v85.2.0. Its calls
+  to Stripe now carry API version `2026-10-28.endive` instead of
+  `2026-05-27.dahlia`; no parameter it sends and no field it reads changed
+  between the two. Webhook deliveries are still read at the version the
+  endpoint is registered on. A 409 or 5xx answer from Stripe is now retried
+  under the same idempotency key, so a retried create returns the original
+  checkout, customer or charge.
+
 ## v0.2.0 - 2026-09-24
 
 ### Fixed
