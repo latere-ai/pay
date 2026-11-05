@@ -1,68 +1,26 @@
 name: ci
 
-# The Go gates run through latere-ai/ci's reusable pipeline, which probes this
-# Makefile and runs the targets it finds. The checks live in
-# latere.ai/x/ci-gate, pinned in go.mod, so each of them runs identically from
-# a laptop: `make test`, `make cover`, `make spec-lint` and the rest need
-# nothing but this checkout.
-#
-# The Postgres suite stays here. It needs a service container, which a
-# reusable workflow has no way to declare on a caller's behalf, and
-# ledger/pgledger's tests skip themselves without TEST_DATABASE_URL rather
-# than fail. A skipped suite is the failure mode this job exists to prevent.
-
-# A push or pull request that changes only specs or markdown starts no run,
-# because no build or test here reads them. `lateregate release` runs the whole
-# bar, the spec tree included, before every tag. A tag is never filtered by
-# paths.
+# The bar lives in latere-ai/ci-gate, pinned in go.mod, and the shared
+# workflow runs it. What this repository decides is in .lateregate.yaml.
+# `lateregate init` writes this file, the same in every repository.
 on:
   push:
     branches: [main]
-    tags: ['v*']
-    paths-ignore:
-      - "specs/**"
-      - "**.md"
   pull_request:
-    paths-ignore:
-      - "specs/**"
-      - "**.md"
   workflow_dispatch:
 
 # A newer push to the same ref supersedes this run: its commit carries every
-# change this one would verify, and the runner is better spent on it.
+# change this one would verify.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
+# actions: read lets the gate find the last commit whose CI passed, which it
+# measures the change from.
 permissions:
   contents: read
+  actions: read
 
 jobs:
-  verify:
+  gate:
     uses: latere-ai/ci/.github/workflows/lateregate.yml@v1
-
-  postgres:
-    name: ledger against a real Postgres
-    runs-on: ubuntu-latest
-    env:
-      GOTOOLCHAIN: local
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_PASSWORD: pay
-          POSTGRES_USER: pay
-          POSTGRES_DB: pay_test
-        options: >-
-          --health-cmd pg_isready --health-interval 5s
-          --health-timeout 5s --health-retries 10
-        ports: ['5432:5432']
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      - name: test with race
-        run: make test-race
-        env:
-          TEST_DATABASE_URL: postgres://pay:pay@localhost:5432/pay_test?sslmode=disable

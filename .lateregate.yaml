@@ -40,8 +40,8 @@ cover:
       not see
     pgledger: >-
       every statement needs a Postgres server and its tests skip without
-      TEST_DATABASE_URL; the suite runs against a real server in this
-      repository's own postgres job, the only place that can host one
+      TEST_DATABASE_URL; the suite runs against a real server in the
+      ledger-postgres e2e suite below, the only place that hosts one
 
 license:
   # The identifier every source file carries and the holder it names. There
@@ -79,3 +79,13 @@ waive:
       day it declares pooled and reads a pooled name with a direct
       fallback.
     until: 2026-12-19
+
+e2e:
+  # The Postgres store against a real server, with the race detector on.
+  # pgledger's tests skip themselves without TEST_DATABASE_URL, and a skipped
+  # test fails the suite, so a missing database cannot pass as a green run.
+  - name: ledger-postgres
+    why: the Postgres ledger store keeps the double-entry contract against a real server, race detector on
+    test: {packages: [./ledger/pgledger/...], race: true}
+    services: [postgres]
+    env: {TEST_DATABASE_URL: "${postgres.url}"}
