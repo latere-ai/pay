@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: write
+  # The release first checks that CI passed on the tagged commit.
+  actions: read
 
 jobs:
   release:
