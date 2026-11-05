@@ -5,7 +5,7 @@ package pgledger
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"time"
 
 	"github.com/jackc/pgx/v5"

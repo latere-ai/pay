@@ -5,7 +5,8 @@ package pgledger
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strings"
@@ -417,7 +418,7 @@ func marshalLabels(m map[string]string) ([]byte, error) {
 	if len(m) == 0 {
 		return nil, nil
 	}
-	b, err := json.Marshal(m)
+	b, err := json.Marshal(m, json.Deterministic(true), jsontext.AllowInvalidUTF8(true))
 	if err != nil {
 		return nil, fmt.Errorf("pgledger: marshal labels: %w", err)
 	}

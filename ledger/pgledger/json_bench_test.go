@@ -4,7 +4,7 @@
 package pgledger
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"testing"
 
 	"latere.ai/x/pay/ledger"

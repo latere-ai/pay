@@ -5,7 +5,8 @@ package stripe
 
 import (
 	"cmp"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,6 +16,14 @@ import (
 
 	"latere.ai/x/pay"
 	"latere.ai/x/pay/money"
+)
+
+// webhookJSON reads Stripe's payloads: duplicate keys, invalid UTF-8 and any
+// letter case are accepted, as the encoding/json decoder did.
+var webhookJSON = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
 )
 
 // signatureHeader is where Stripe puts the delivery's signature.
@@ -130,7 +139,7 @@ func ignored(payload []byte) pay.Event {
 // on the payment intent is the second line of defense rather than the only one.
 func (a *Adapter) session(raw, payload []byte) (pay.Event, error) {
 	var s stripe.CheckoutSession
-	if err := json.Unmarshal(raw, &s); err != nil {
+	if err := json.Unmarshal(raw, &s, webhookJSON); err != nil {
 		return pay.Event{}, fmt.Errorf("pay/stripe: decode checkout session: %w", err)
 	}
 	if s.PaymentStatus != stripe.CheckoutSessionPaymentStatusPaid {
@@ -202,7 +211,7 @@ func sessionGross(s *stripe.CheckoutSession) (money.Micro, error) {
 // under a reference the ledger has already seen.
 func intentSucceeded(raw, payload []byte) (pay.Event, error) {
 	var pi stripe.PaymentIntent
-	if err := json.Unmarshal(raw, &pi); err != nil {
+	if err := json.Unmarshal(raw, &pi, webhookJSON); err != nil {
 		return pay.Event{}, fmt.Errorf("pay/stripe: decode payment intent: %w", err)
 	}
 	if pi.Metadata[metaOrigin] != originSavedMethod {
@@ -286,7 +295,7 @@ type chargePayload struct {
 // otherwise leave a drift nothing can account for.
 func refunded(raw, payload []byte) (pay.Event, error) {
 	var c chargePayload
-	if err := json.Unmarshal(raw, &c); err != nil {
+	if err := json.Unmarshal(raw, &c, webhookJSON); err != nil {
 		return pay.Event{}, fmt.Errorf("pay/stripe: decode charge: %w", err)
 	}
 	ref, amount, cur := latestRefund(&c)
@@ -353,7 +362,7 @@ func disputed(raw, payload []byte) (pay.Event, error) {
 		PaymentIntent string            `json:"payment_intent"`
 		Metadata      map[string]string `json:"metadata"`
 	}
-	if err := json.Unmarshal(raw, &d); err != nil {
+	if err := json.Unmarshal(raw, &d, webhookJSON); err != nil {
 		return pay.Event{}, fmt.Errorf("pay/stripe: decode dispute: %w", err)
 	}
 	if err := reversible(d.PaymentIntent, d.ID); err != nil {
@@ -382,7 +391,7 @@ func paymentFailed(raw, payload []byte) (pay.Event, error) {
 		ID       string            `json:"id"`
 		Metadata map[string]string `json:"metadata"`
 	}
-	if err := json.Unmarshal(raw, &pi); err != nil {
+	if err := json.Unmarshal(raw, &pi, webhookJSON); err != nil {
 		return pay.Event{}, fmt.Errorf("pay/stripe: decode payment intent: %w", err)
 	}
 	e := ignored(payload)

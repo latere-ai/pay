@@ -7,7 +7,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -121,7 +121,7 @@ func (s *stub) callsTo(method, path string) []call {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
+	_ = json.MarshalWrite(w, v)
 }
 
 // writeStripeError answers the way Stripe does, so the SDK produces a real
@@ -137,7 +137,7 @@ func writeStripeError(w http.ResponseWriter, status int, typ stripe.ErrorType, c
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": body})
+	_ = json.MarshalWrite(w, map[string]any{"error": body})
 }
 
 // backend points stripe-go at the stub with retries off, so a stubbed 5xx is

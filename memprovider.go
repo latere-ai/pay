@@ -5,7 +5,8 @@ package pay
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"net/http"
 	"slices"
 	"strconv"
@@ -144,6 +145,14 @@ func (m *MemProvider) ChargeSaved(_ context.Context, p SavedChargeParams) (Charg
 	return Charge{Ref: m.mint("pi"), Status: status}, nil
 }
 
+// memDecode lets a hand-written payload use any letter case for Event's
+// untagged field names and repeat a key.
+var memDecode = json.JoinOptions(
+	jsontext.AllowDuplicateNames(true),
+	jsontext.AllowInvalidUTF8(true),
+	json.MatchCaseInsensitiveNames(true),
+)
+
 // ParseWebhook verifies the signature against Secret and decodes the payload as
 // an Event, so a test synthesizes exactly the deliveries a real adapter would.
 func (m *MemProvider) ParseWebhook(payload []byte, h http.Header) (Event, error) {
@@ -154,7 +163,7 @@ func (m *MemProvider) ParseWebhook(payload []byte, h http.Header) (Event, error)
 		return Event{}, ErrBadSignature
 	}
 	var e Event
-	if err := json.Unmarshal(payload, &e); err != nil {
+	if err := json.Unmarshal(payload, &e, memDecode); err != nil {
 		return Event{}, err
 	}
 	e.Provider = Memory
@@ -170,7 +179,7 @@ func (m *MemProvider) mint(prefix string) string {
 // MemEvent builds the JSON payload a MemProvider's ParseWebhook accepts, so a
 // test does not hand-roll the encoding.
 func MemEvent(kind Kind, ref string, gross money.Micro, meta map[string]string) []byte {
-	b, err := json.Marshal(Event{Kind: kind, Ref: ref, Gross: gross, Meta: meta})
+	b, err := json.Marshal(Event{Kind: kind, Ref: ref, Gross: gross, Meta: meta}, json.Deterministic(true))
 	if err != nil {
 		// Event is strings, integers, a string map and a byte slice, so this
 		// is unreachable today. It panics rather than returning the empty
