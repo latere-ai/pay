@@ -11,11 +11,21 @@ name: ci
 # ledger/pgledger's tests skip themselves without TEST_DATABASE_URL rather
 # than fail. A skipped suite is the failure mode this job exists to prevent.
 
+# A push or pull request that changes only specs or markdown starts no run,
+# because no build or test here reads them. `lateregate release` runs the whole
+# bar, the spec tree included, before every tag. A tag is never filtered by
+# paths.
 on:
   push:
     branches: [main]
     tags: ['v*']
+    paths-ignore:
+      - "specs/**"
+      - "**.md"
   pull_request:
+    paths-ignore:
+      - "specs/**"
+      - "**.md"
   workflow_dispatch:
 
 # A newer push to the same ref supersedes this run: its commit carries every
