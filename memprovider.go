@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
@@ -82,13 +83,32 @@ func (m *MemProvider) Charges() []SavedChargeParams {
 	return slices.Clone(m.charges)
 }
 
-// CreateCheckout records the params and returns the canned URL.
+// checkAmount refuses what a real adapter refuses before calling its
+// processor, so a product tested only against the fake meets the refusal in
+// its tests rather than in production. An empty currency is USD, as it is for
+// the Stripe adapter.
+func checkAmount(amount money.Micro, cur money.Currency) error {
+	if amount <= 0 {
+		return ErrNotPositive
+	}
+	if cur != "" && !cur.Valid() {
+		return fmt.Errorf("pay: %w: %s", money.ErrCurrency, cur)
+	}
+	return nil
+}
+
+// CreateCheckout records the params and returns the canned URL. Like a real
+// adapter it refuses an amount that is not positive with ErrNotPositive, and a
+// currency money does not know with money.ErrCurrency.
 func (m *MemProvider) CreateCheckout(_ context.Context, p CheckoutParams) (Checkout, error) {
 	if m.Unconfigured {
 		return Checkout{}, ErrUnconfigured
 	}
 	if !m.Has(CapCheckout) {
 		return Checkout{}, ErrUnsupported
+	}
+	if err := checkAmount(p.Amount, p.Currency); err != nil {
+		return Checkout{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -123,13 +143,17 @@ func (m *MemProvider) EnsureCustomer(_ context.Context, email string, _ map[stri
 	return ref, nil
 }
 
-// ChargeSaved records the attempt and reports the configured result.
+// ChargeSaved records the attempt and reports the configured result. It
+// refuses the same amounts and currencies CreateCheckout does.
 func (m *MemProvider) ChargeSaved(_ context.Context, p SavedChargeParams) (Charge, error) {
 	if m.Unconfigured {
 		return Charge{}, ErrUnconfigured
 	}
 	if !m.Has(CapSavedMethod) {
 		return Charge{}, ErrUnsupported
+	}
+	if err := checkAmount(p.Amount, p.Currency); err != nil {
+		return Charge{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -176,10 +200,32 @@ func (m *MemProvider) mint(prefix string) string {
 	return prefix + "_" + strconv.Itoa(m.seq)
 }
 
+// MemEventOption sets a field of an Event that MemEvent does not take as an
+// argument.
+type MemEventOption func(*Event)
+
+// WithReversalRef sets the reference of a refund or dispute, distinct from the
+// purchase's. A handler that reverses a credit reads it as Event.ReversalRef,
+// so a test of the refund path needs it.
+func WithReversalRef(ref string) MemEventOption {
+	return func(e *Event) { e.ReversalRef = ref }
+}
+
+// WithEmail sets the payer's email, which a handler reads as Event.Email to
+// find the holder a purchase belongs to.
+func WithEmail(email string) MemEventOption {
+	return func(e *Event) { e.Email = email }
+}
+
 // MemEvent builds the JSON payload a MemProvider's ParseWebhook accepts, so a
-// test does not hand-roll the encoding.
-func MemEvent(kind Kind, ref string, gross money.Micro, meta map[string]string) []byte {
-	b, err := json.Marshal(Event{Kind: kind, Ref: ref, Gross: gross, Meta: meta}, json.Deterministic(true))
+// test does not hand-roll the encoding. Options set the fields it has no
+// argument for, such as the reference of a refund.
+func MemEvent(kind Kind, ref string, gross money.Micro, meta map[string]string, opts ...MemEventOption) []byte {
+	e := Event{Kind: kind, Ref: ref, Gross: gross, Meta: meta}
+	for _, o := range opts {
+		o(&e)
+	}
+	b, err := json.Marshal(e, json.Deterministic(true))
 	if err != nil {
 		// Event is strings, integers, a string map and a byte slice, so this
 		// is unreachable today. It panics rather than returning the empty

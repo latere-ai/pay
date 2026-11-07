@@ -86,8 +86,8 @@ func TestCheckoutRecordsParamsAndMintsDistinctSessions(t *testing.T) {
 	if m.Checkouts()[0].Amount != 5*money.Dollar {
 		t.Error("Checkouts() handed out the backing array")
 	}
-	a, _ := m.CreateCheckout(ctx, pay.CheckoutParams{})
-	b, _ := m.CreateCheckout(ctx, pay.CheckoutParams{})
+	a, _ := m.CreateCheckout(ctx, pay.CheckoutParams{Amount: money.Dollar})
+	b, _ := m.CreateCheckout(ctx, pay.CheckoutParams{Amount: money.Dollar})
 	if a.SessionID == b.SessionID {
 		t.Errorf("two checkouts share a session id %q", a.SessionID)
 	}
@@ -101,7 +101,7 @@ func TestChargeSavedOutcomes(t *testing.T) {
 	ctx := context.Background()
 
 	pending := &pay.MemProvider{Caps: caps, ChargeResult: pay.ChargePending}
-	got, err := pending.ChargeSaved(ctx, pay.SavedChargeParams{IdempotencyKey: "k"})
+	got, err := pending.ChargeSaved(ctx, pay.SavedChargeParams{Amount: money.Dollar, IdempotencyKey: "k"})
 	if err != nil {
 		t.Fatalf("ChargeSaved: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestChargeSavedOutcomes(t *testing.T) {
 	// A decline is an error, not a failed-status result, so a caller cannot
 	// mistake it for something worth retrying.
 	declined := &pay.MemProvider{Caps: caps, ChargeErr: pay.ErrDeclined}
-	if _, err := declined.ChargeSaved(ctx, pay.SavedChargeParams{}); !errors.Is(err, pay.ErrDeclined) {
+	if _, err := declined.ChargeSaved(ctx, pay.SavedChargeParams{Amount: money.Dollar}); !errors.Is(err, pay.ErrDeclined) {
 		t.Errorf("ChargeSaved = %v, want ErrDeclined", err)
 	}
 	// Even a refused attempt is recorded, which is what makes a retry loop
@@ -171,5 +171,66 @@ func TestCustomerRefZero(t *testing.T) {
 	}
 	if (pay.CustomerRef{Provider: pay.Stripe, ID: "cus_1"}).Zero() {
 		t.Error("a populated CustomerRef reports Zero")
+	}
+}
+
+func TestMemProviderRefusesANonPositiveAmount(t *testing.T) {
+	ctx := context.Background()
+	caps := []pay.Capability{pay.CapCheckout, pay.CapSavedMethod}
+	m := &pay.MemProvider{Caps: caps}
+	for name, amount := range map[string]money.Micro{"zero": 0, "negative": -5 * money.Dollar} {
+		if _, err := m.CreateCheckout(ctx, pay.CheckoutParams{Amount: amount, Currency: money.USD}); !errors.Is(err, pay.ErrNotPositive) {
+			t.Errorf("CreateCheckout with a %s amount = %v, want ErrNotPositive", name, err)
+		}
+		if _, err := m.ChargeSaved(ctx, pay.SavedChargeParams{Amount: amount, Currency: money.USD, IdempotencyKey: "k"}); !errors.Is(err, pay.ErrNotPositive) {
+			t.Errorf("ChargeSaved with a %s amount = %v, want ErrNotPositive", name, err)
+		}
+	}
+	if _, err := m.CreateCheckout(ctx, pay.CheckoutParams{Amount: money.Dollar, Currency: "xxx"}); !errors.Is(err, money.ErrCurrency) {
+		t.Errorf("CreateCheckout in an unknown currency = %v, want money.ErrCurrency", err)
+	}
+	if _, err := m.ChargeSaved(ctx, pay.SavedChargeParams{Amount: money.Dollar, Currency: "xxx", IdempotencyKey: "k"}); !errors.Is(err, money.ErrCurrency) {
+		t.Errorf("ChargeSaved in an unknown currency = %v, want money.ErrCurrency", err)
+	}
+	// A currency money knows is not the fake's to refuse, and neither is an
+	// empty one, which the Stripe adapter reads as USD.
+	for _, cur := range []money.Currency{money.EUR, ""} {
+		if _, err := m.CreateCheckout(ctx, pay.CheckoutParams{Amount: money.Dollar, Currency: cur}); err != nil {
+			t.Errorf("CreateCheckout in %q = %v, want it accepted", cur, err)
+		}
+	}
+	if got := len(m.Checkouts()); got != 2 {
+		t.Errorf("recorded %d checkouts, want only the 2 accepted ones", got)
+	}
+	if got := len(m.Charges()); got != 0 {
+		t.Errorf("recorded %d charges, want none: a refused charge is not an attempt", got)
+	}
+}
+
+// MemEvent must be able to build the delivery a refund handler reads, or a
+// product cannot test its refund path offline.
+func TestMemEventCanDriveARefund(t *testing.T) {
+	var got pay.Event
+	h := pay.WebhookHandler(&pay.MemProvider{Secret: "shh"}, func(_ context.Context, e pay.Event) error {
+		got = e
+		return nil
+	})
+	body := pay.MemEvent(pay.KindRefunded, "pi_1", 20*money.Dollar, nil,
+		pay.WithReversalRef("re_1"), pay.WithEmail("ada@example.test"))
+	if code := post(t, h, string(body), signed()); code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	if got.Kind != pay.KindRefunded || got.Ref != "pi_1" || got.ReversalRef != "re_1" || got.Email != "ada@example.test" {
+		t.Errorf("handler saw %+v", got)
+	}
+	// Without options the payload is what it was.
+	var plain pay.Event
+	h = pay.WebhookHandler(&pay.MemProvider{Secret: "shh"}, func(_ context.Context, e pay.Event) error {
+		plain = e
+		return nil
+	})
+	post(t, h, string(pay.MemEvent(pay.KindPaid, "pi_2", money.Dollar, nil)), signed())
+	if plain.ReversalRef != "" || plain.Email != "" {
+		t.Errorf("an event built without options carries %+v", plain)
 	}
 }

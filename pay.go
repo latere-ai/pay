@@ -64,6 +64,11 @@ var (
 	// ErrDeclined reports a charge the processor refused. It is distinct from a
 	// transport error because a decline must never be retried.
 	ErrDeclined = errors.New("pay: the payment method was declined")
+	// ErrNotPositive reports a checkout or charge whose amount is zero or
+	// negative. An adapter refuses it before calling the processor, so a
+	// caller's arithmetic mistake is a local error that names the cause
+	// rather than a processor rejection, or a refund dressed as a purchase.
+	ErrNotPositive = errors.New("pay: an amount must be positive")
 )
 
 // TaxMode says how a charge is taxed.

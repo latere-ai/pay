@@ -6,7 +6,7 @@ package pay_test
 import (
 	"context"
 	"errors"
-	"io"
+	"fmt"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -217,4 +217,94 @@ func TestOfflineMoneyPath(t *testing.T) {
 	}
 }
 
-var _ = io.Discard
+// bounce is a provider whose ParseWebhook answers with a fixed error, so the
+// handler's wording can be tested for errors a MemProvider cannot produce.
+type bounce struct {
+	pay.MemProvider
+	err error
+}
+
+func (b *bounce) ParseWebhook([]byte, http.Header) (pay.Event, error) { return pay.Event{}, b.err }
+
+func postBody(t *testing.T, h http.Handler) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodPost, "/webhooks/pay", strings.NewReader("{}"))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+
+// A delivery the adapter refuses for a reason other than its signature is
+// still a 400, but an operator reading "bad signature" for a paid EUR session
+// goes looking at the secret while a customer's payment goes uncredited.
+func TestWebhookHandlerNamesWhyItRefused(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		body string
+		at   string
+	}{
+		{"a bad signature", fmt.Errorf("adapter: %w", pay.ErrBadSignature), "bad signature", "verify delivery"},
+		{"a delivery it cannot use", errors.New("adapter: not in USD"), "unusable delivery", "parse delivery"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var sb strings.Builder
+			log := slog.New(slog.NewTextHandler(&sb, nil))
+			h := pay.WebhookHandler(&bounce{err: c.err}, nil, pay.WithLogger(log))
+			w := postBody(t, h)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400", w.Code)
+			}
+			if got := strings.TrimSpace(w.Body.String()); got != c.body {
+				t.Errorf("body = %q, want %q", got, c.body)
+			}
+			if !strings.Contains(sb.String(), `at="`+c.at+`"`) {
+				t.Errorf("log = %q, want at=%q", sb.String(), c.at)
+			}
+		})
+	}
+}
+
+// Acknowledging is not handling: a deployment that mounted the endpoint
+// without a processor or a handler needs to see the deliveries going nowhere.
+func TestWebhookHandlerLogsAcknowledgedDrops(t *testing.T) {
+	paid := string(pay.MemEvent(pay.KindPaid, "pi_1", money.Dollar, nil))
+	cases := []struct {
+		name string
+		h    func(*slog.Logger) http.Handler
+		at   string
+	}{
+		{"an unconfigured provider", func(l *slog.Logger) http.Handler {
+			return pay.WebhookHandler(&pay.MemProvider{Unconfigured: true}, nil, pay.WithLogger(l))
+		}, "provider unconfigured"},
+		{"a nil provider", func(l *slog.Logger) http.Handler {
+			return pay.WebhookHandler(nil, nil, pay.WithLogger(l))
+		}, "no provider"},
+		{"a nil handler", func(l *slog.Logger) http.Handler {
+			return pay.WebhookHandler(&pay.MemProvider{Secret: "shh"}, nil, pay.WithLogger(l))
+		}, "no handler"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var sb strings.Builder
+			h := c.h(slog.New(slog.NewTextHandler(&sb, nil)))
+			if code := post(t, h, paid, signed()); code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", code)
+			}
+			if !strings.Contains(sb.String(), "acknowledged without being handled") || !strings.Contains(sb.String(), `at="`+c.at+`"`) {
+				t.Errorf("log = %q, want an acknowledged-drop line at %q", sb.String(), c.at)
+			}
+		})
+	}
+	// Without a logger the same paths stay silent and still answer 200.
+	for _, h := range []http.Handler{
+		pay.WebhookHandler(nil, nil),
+		pay.WebhookHandler(&pay.MemProvider{Unconfigured: true}, nil),
+		pay.WebhookHandler(&pay.MemProvider{Secret: "shh"}, nil),
+	} {
+		if code := post(t, h, paid, signed()); code != http.StatusOK {
+			t.Errorf("status = %d, want 200", code)
+		}
+	}
+}
