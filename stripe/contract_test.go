@@ -94,6 +94,16 @@ func (f *fakeAccount) createSession(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+// paidDelivery signs a paid checkout session for ref with the harness secret,
+// which is the delivery the conformance suite needs to see accepted.
+func paidDelivery(t *testing.T, ref string) ([]byte, http.Header) {
+	t.Helper()
+	sess := paidSession()
+	sess["payment_intent"] = ref
+	payload := eventPayload(t, eventSessionCompleted, sess)
+	return payload, signedNow(payload)
+}
+
 // TestProviderContract runs the port's conformance suite against the adapter,
 // declaring exactly the capabilities it claims. An adapter that says it has
 // CapSavedMethod and returns ErrUnsupported fails here.
@@ -102,7 +112,7 @@ func TestProviderContract(t *testing.T) {
 		s := newStub(t)
 		newFakeAccount(t, s)
 		return newAdapter(t, s)
-	}, []pay.Capability{pay.CapCheckout, pay.CapSavedMethod, pay.CapRefund})
+	}, []pay.Capability{pay.CapCheckout, pay.CapSavedMethod, pay.CapRefund}, paytest.WithPaidDelivery(paidDelivery))
 }
 
 // TestProviderContract_WithTax runs the same suite against a deployment that
@@ -113,7 +123,7 @@ func TestProviderContract_WithTax(t *testing.T) {
 		s := newStub(t)
 		newFakeAccount(t, s)
 		return newAdapter(t, s, withTax)
-	}, []pay.Capability{pay.CapCheckout, pay.CapSavedMethod, pay.CapRefund, pay.CapTax})
+	}, []pay.Capability{pay.CapCheckout, pay.CapSavedMethod, pay.CapRefund, pay.CapTax}, paytest.WithPaidDelivery(paidDelivery))
 }
 
 func TestHas_DeclaresTaxOnlyWhenTheDeploymentHasIt(t *testing.T) {
