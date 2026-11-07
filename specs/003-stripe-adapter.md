@@ -1,5 +1,5 @@
 ---
-title: pay/stripe — one proven integration, one design reference
+title: "pay/stripe: one proven integration, one design reference"
 status: implemented
 repo: latere-ai/pay
 package: latere.ai/x/pay/stripe
@@ -170,9 +170,9 @@ no global mutation.
 ### What the spec got wrong
 
 - **"no typed field in the SDK"** is true of v82 and stale for v85, which
-  has `CheckoutSessionCreateManagedPaymentsParams`. `AddExtra` is kept —
-  it is what the proven integration sends and the wire bytes are
-  identical — and the regression test asserts the parameter appears
+  has `CheckoutSessionCreateManagedPaymentsParams`. `AddExtra` is kept,
+  since it is what the proven integration sends and the wire bytes are
+  identical, and the regression test asserts the parameter appears
   **exactly once**, so adopting the typed field later without removing
   the `AddExtra` fails rather than silently sending two values.
 - **`requires_action` is not how an off-session challenge arrives.** The

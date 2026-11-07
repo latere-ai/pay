@@ -115,6 +115,22 @@ statement, worked examples, and the review checklist are in the
 in pkg. The rule applies to new text and to reviews; existing text is fixed as
 it is touched.
 
+## Sending a change
+
+1. Fork the repository and make a branch.
+2. Make one logical change per commit, and stage files by name.
+3. Write the subject as `scope: what changed`, in lowercase, for example
+   `ledger: refuse a settlement of a released hold`.
+4. Open a pull request.
+
+A bug fix comes with a test that fails without the fix. A change to a
+store or an adapter passes its conformance suite, and a change under
+`ledger/` runs the Postgres half above. A change a user would notice gets
+a line under `## Unreleased` in `CHANGELOG.md`; an incompatible one says
+so there. Maintainers push to `main` directly, and CI runs the same bar on
+every push and pull request. If you plan a large change, open an issue
+first.
+
 ## Releasing
 
 Write under `## Unreleased` in [`CHANGELOG.md`](CHANGELOG.md) as work lands,
@@ -127,3 +143,8 @@ go tool lateregate release vX.Y.Z
 which turns `Unreleased` into the version's section, commits, tags, and
 pushes. A tag without a changelog section is refused by the pre-push hook.
 While the module is `v0.x`, a breaking change bumps the minor version.
+
+## Reporting a vulnerability
+
+Do not open an issue. [`SECURITY.md`](SECURITY.md) says where to send the
+report.

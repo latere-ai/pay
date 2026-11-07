@@ -1,5 +1,5 @@
 ---
-title: ledger — the append-only credit ledger every product folds a balance from
+title: "ledger: the append-only credit ledger every product folds a balance from"
 status: implemented
 repo: latere-ai/pay
 package: latere.ai/x/pay/ledger

@@ -1,5 +1,5 @@
 ---
-title: payment — the vendor-neutral port money enters through
+title: "payment: the vendor-neutral port money enters through"
 status: implemented
 repo: latere-ai/pay
 package: latere.ai/x/pay
@@ -137,7 +137,7 @@ type Provider interface {
     // the adapter has no customer concept.
     EnsureCustomer(ctx context.Context, email string, meta map[string]string) (CustomerRef, error)
 
-    // ChargeSaved charges a method the customer already authorised, with
+    // ChargeSaved charges a method the customer already authorized, with
     // no page and nobody present. This is auto-recharge. ErrUnsupported
     // until an adapter implements it.
     ChargeSaved(ctx context.Context, p SavedChargeParams) (Charge, error)
@@ -146,7 +146,7 @@ type Provider interface {
     // It takes the whole header set, not one signature string: Stripe
     // signs in `Stripe-Signature`, PayPal spreads verification across
     // five headers, and a one-string signature would have to be
-    // re-generalised the day a second adapter lands.
+    // re-generalized the day a second adapter lands.
     ParseWebhook(payload []byte, h http.Header) (Event, error)
 }
 ```
@@ -233,7 +233,7 @@ const (
     KindPaid     Kind = "paid"     // credit the wallet
     KindRefunded Kind = "refunded" // reverse the credit
     KindDisputed Kind = "disputed" // reverse the credit
-    // KindPaymentFailed moves no money. It is modelled anyway because
+    // KindPaymentFailed moves no money. It is modeled anyway because
     // auto-recharge has to learn its attempt failed, and an event reduced
     // to KindIgnored never reaches a handler.
     KindPaymentFailed Kind = "payment_failed"

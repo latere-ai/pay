@@ -1,0 +1,69 @@
+name: Bug report
+description: The library does something it should not, or does not do something it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report a security vulnerability here. Follow
+        [SECURITY.md](https://github.com/latere-ai/pay/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+      placeholder: |
+        A second delivery of the same paid event credited the wallet twice ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >
+        The shortest program or test that shows the problem, with its
+        output. MemProvider and ledger.NewMemStore reproduce most problems
+        without a processor or a database. Never paste a secret key, a
+        webhook secret or a customer's details.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      multiple: true
+      options:
+        - pay (the port, the webhook handler, MemProvider)
+        - money
+        - ledger (the in-memory store)
+        - ledger/pgledger
+        - stripe
+        - paytest or ledgertest
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The module version, from `go list -m latere.ai/x/pay` in your module.
+      placeholder: v0.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: postgres
+    attributes:
+      label: Postgres version
+      description: For a problem in ledger/pgledger, the output of `SELECT version();`.
+
+  - type: input
+    id: go
+    attributes:
+      label: Go version and platform
+      description: The output of `go version`.
+      placeholder: go version go1.27.3 linux/amd64

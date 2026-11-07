@@ -1,5 +1,5 @@
 ---
-title: money — the unit every amount in the platform is in
+title: "money: the unit every amount in the platform is in"
 status: implemented
 repo: latere-ai/pay
 package: latere.ai/x/pay/money

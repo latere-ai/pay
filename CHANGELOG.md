@@ -10,18 +10,6 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
-### Security
-
-- Built with Go 1.27.2, which fixes GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617.
-
-### Fixed
-
-- **Built with Go 1.27.3,** which fixes GO-2026-6809, a flaw in the
-  standard library's certificate verification that this code can reach.
-- A webhook signing secret made only of whitespace now refuses every
-  delivery with `pay.ErrBadSignature`. Before, it was used as the signing
-  key, so a delivery signed with the same blank key verified.
-
 ### Changed
 
 - The Stripe adapter is built on stripe-go v87.1.0, up from v85.2.0. Its calls
@@ -32,7 +20,30 @@ committed: the commit log already holds that.
   under the same idempotency key, so a retried create returns the original
   checkout, customer or charge.
 
+### Security
+
+- A webhook signing secret made only of whitespace now refuses every
+  delivery with `pay.ErrBadSignature`. Before, it was used as the signing
+  key, so a delivery signed with the same blank key verified.
+- **Built and tested with Go 1.27.3,** which fixes GO-2026-6611,
+  GO-2026-6612, GO-2026-6613, GO-2026-6617 and GO-2026-6809, a flaw in the
+  standard library's certificate verification that this code can reach. A
+  program that imports this module builds with its own Go, so build it
+  with 1.27.3 or later.
+
 ## v0.2.0 - 2026-09-24
+
+### Changed
+
+- The identity gate now also reads the frontend for the retired admin flag
+  and refuses a second copy of the authorizer envelope, the question and
+  the decision that `latere.ai/x/pkg` declares once (ci-gate v0.42.0).
+  Nothing changes for a caller of pay.
+- The guides match the code. Webhooks lists every delivery the handler refuses
+  with 400, not only a bad signature. Running Stripe says that automatic tax
+  needs both `stripe.Config.Tax` and `pay.TaxAutomatic`. Getting started
+  carries a complete offline test of the money path, and the package
+  documentation links to the guides.
 
 ### Fixed
 
@@ -53,14 +64,14 @@ committed: the commit log already holds that.
   it marks them with the metadata `pay_origin: saved_method`, and the intent
   behind a checkout is left to its session.
 
-### Changed
+## v0.1.0 - 2026-08-22
 
-- The identity gate now also reads the frontend for the retired admin flag
-  and refuses a second copy of the authorizer envelope, the question and
-  the decision that `latere.ai/x/pkg` declares once (ci-gate v0.42.0).
-  Nothing changes for a caller of pay.
-- The guides match the code. Webhooks lists every delivery the handler refuses
-  with 400, not only a bad signature. Running Stripe says that automatic tax
-  needs both `stripe.Config.Tax` and `pay.TaxAutomatic`. Getting started
-  carries a complete offline test of the money path, and the package
-  documentation links to the guides.
+### Added
+
+- **The first release.** `money`, an integer amount type in micro-USD with
+  a currency vocabulary and one rounding rule; the processor-agnostic
+  payment port with its webhook handler and the in-memory `MemProvider`;
+  the Stripe adapter; the credit ledger, with balances folded from an
+  append-only history, holds, transfers, settlement and reversals, in an
+  in-memory store and a Postgres store; and the conformance suites
+  `paytest` and `ledgertest`.

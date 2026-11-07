@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/latere-ai/pay/blob/main/SECURITY.md
+    about: Report it privately, as SECURITY.md says. Do not open an issue for it.
+  - name: Documentation
+    url: https://github.com/latere-ai/pay/blob/main/docs/README.md
+    about: The guides, and the API reference on pkg.go.dev. If they do not answer your question, file a bug against the documentation.
