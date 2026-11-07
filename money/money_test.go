@@ -6,6 +6,7 @@ package money
 import (
 	"errors"
 	"math"
+	"math/big"
 	"testing"
 )
 
@@ -237,9 +238,10 @@ func FuzzFromUSD(f *testing.F) {
 		if got < 0 {
 			t.Fatalf("FromUSD(%v) = %d, a negative amount from a successful conversion", v, got)
 		}
-		// Rounding is away from zero, so the result never understates the input.
-		if float64(got) < v*float64(microsPerUnit)-1 {
-			t.Fatalf("FromUSD(%v) = %d understates the input", v, got)
+		// The result is within one micro plus one float step of the exact value
+		// of the float: the step is the slack the shortest decimal may take.
+		if !withinAFloatStep(v, got) {
+			t.Fatalf("FromUSD(%v) = %d, more than a micro plus a float step from the exact value", v, got)
 		}
 	})
 }
@@ -261,8 +263,11 @@ func FuzzString(f *testing.F) {
 
 func FuzzSpreadCreditedNeverExceedsGross(f *testing.F) {
 	f.Add(int64(20_000_000), int64(500), int64(300_000))
+	f.Add(int64(math.MaxInt64), int64(10_000), int64(0))
+	f.Add(int64(math.MaxInt64), int64(math.MaxInt64), int64(math.MinInt64))
+	f.Add(int64(2e16), int64(500), int64(300_000))
 	f.Fuzz(func(t *testing.T, gross, bps, fixed int64) {
-		if gross < 0 || bps < 0 || fixed < 0 || gross > 1<<60 || bps > 1<<20 || fixed > 1<<60 {
+		if gross < 0 {
 			return
 		}
 		got := Spread{Bps: bps, FixedMicro: Micro(fixed)}.Credited(Micro(gross))
@@ -297,6 +302,193 @@ func TestAnUnknownCurrencyCannotForgeASign(t *testing.T) {
 		}
 		if (tc.m < 0) != (got[0] == '-') {
 			t.Errorf("Micro(%d).String(%q) = %q: the leading sign does not match the amount", tc.m, tc.cur, got)
+		}
+	}
+}
+
+// creditedOracle is the documented formula in exact big-integer arithmetic.
+func creditedOracle(gross, bps, fixed int64) int64 {
+	if gross <= 0 {
+		return 0
+	}
+	if bps < 0 {
+		bps = 0
+	}
+	if fixed < 0 {
+		fixed = 0
+	}
+	cut := new(big.Int).Mul(big.NewInt(gross), big.NewInt(bps))
+	cut.Add(cut, big.NewInt(5_000)).Quo(cut, big.NewInt(10_000))
+	r := new(big.Int).Sub(big.NewInt(gross), cut)
+	r.Sub(r, big.NewInt(fixed))
+	if r.Sign() < 0 {
+		return 0
+	}
+	return r.Int64()
+}
+
+// gross*bps used to overflow int64, turning the cut negative and crediting
+// more than was paid.
+func TestCreditedNeverExceedsGross(t *testing.T) {
+	grosses := []int64{math.MaxInt64, math.MaxInt64 - 1, math.MaxInt64/500 + 1, 2e16, 1 << 62, 1 << 60}
+	spreads := []Spread{
+		{Bps: 500}, {Bps: 10_000}, {Bps: 500, FixedMicro: 30 * Cent},
+		{Bps: math.MaxInt64}, {Bps: 10_001}, {Bps: 0, FixedMicro: math.MaxInt64},
+	}
+	for _, g := range grosses {
+		for _, s := range spreads {
+			got := s.Credited(Micro(g))
+			if got < 0 || got > Micro(g) {
+				t.Errorf("%+v.Credited(%d) = %d, outside [0, gross]", s, g, got)
+			}
+			if want := creditedOracle(g, s.Bps, int64(s.FixedMicro)); int64(got) != want {
+				t.Errorf("%+v.Credited(%d) = %d, want %d", s, g, got, want)
+			}
+		}
+	}
+	if got := (Spread{Bps: 10_000}).Credited(math.MaxInt64); got != 0 {
+		t.Errorf("a 100%% cut of MaxInt64 credits %d, want 0", got)
+	}
+	if got := (Spread{Bps: 500}).Credited(2e16); got != 2e16-1e15 {
+		t.Errorf("5%% of 2e16 credits %d, want %d", got, int64(2e16-1e15))
+	}
+}
+
+// The new arithmetic keeps the old half-up rounding exactly.
+func TestCreditedMatchesTheExactFormula(t *testing.T) {
+	vals := []int64{0, 1, 2, 4_999, 5_000, 5_001, 9_999, 10_000, 15_000, 20_000_000, 1<<62 + 12345, math.MaxInt64}
+	bpss := []int64{0, 1, 7, 500, 9_999, 10_000, 10_001, 1 << 40, math.MaxInt64}
+	fixeds := []int64{0, 1, 300_000, 1 << 50, math.MaxInt64}
+	for _, g := range vals {
+		for _, b := range bpss {
+			for _, f := range fixeds {
+				got := Spread{Bps: b, FixedMicro: Micro(f)}.Credited(Micro(g))
+				if want := creditedOracle(g, b, f); int64(got) != want {
+					t.Fatalf("Credited(%d) bps=%d fixed=%d = %d, want %d", g, b, f, got, want)
+				}
+			}
+		}
+	}
+}
+
+// A negative Bps made the cut negative and credited more than the purchase.
+func TestCreditedIgnoresANegativeSpread(t *testing.T) {
+	gross := 20 * Dollar
+	cases := []struct {
+		s    Spread
+		want Micro
+	}{
+		{Spread{Bps: -500}, gross},
+		{Spread{FixedMicro: -Dollar}, gross},
+		{Spread{Bps: math.MinInt64, FixedMicro: math.MinInt64}, gross},
+		{Spread{Bps: -500, FixedMicro: 30 * Cent}, gross - 30*Cent},
+	}
+	for _, tc := range cases {
+		if got := tc.s.Credited(gross); got != tc.want {
+			t.Errorf("%+v.Credited(%d) = %d, want %d", tc.s, gross, got, tc.want)
+		}
+	}
+}
+
+// float64(i)/1e6 times 1e6 is not always i in floating point, so the old
+// multiply-then-ceil rounded some whole-micro amounts up by one micro.
+func TestFromUSDIsExactOnWholeMicros(t *testing.T) {
+	bad := 0
+	check := func(i int64) {
+		f := float64(i) / 1e6
+		got, err := FromUSD(f)
+		if err != nil || int64(got) != i {
+			bad++
+			if bad <= 3 {
+				t.Errorf("FromUSD(%v) = %d, %v, want %d", f, got, err, i)
+			}
+		}
+	}
+	for i := int64(1); i <= 1_000_000; i++ {
+		check(i)
+	}
+	for _, i := range []int64{123, 1_000_000_001, 123_456_789_012, 1 << 40, 1_000_000_000_000_000} {
+		check(i)
+	}
+	if bad > 0 {
+		t.Fatalf("%d whole-micro amounts were not exact", bad)
+	}
+	if got, err := FromUSD(0.000123); err != nil || got != 123 {
+		t.Fatalf("FromUSD(0.000123) = %d, %v, want 123", got, err)
+	}
+}
+
+func TestFromUSDRoundsARealFractionUp(t *testing.T) {
+	cases := []struct {
+		f    float64
+		want Micro
+	}{
+		{0.0000001, 1}, {0.0000011, 2}, {1.0000001, 1_000_001}, {0.5, 500_000},
+		{0, 0}, {math.Copysign(0, -1), 0}, {1e-300, 1}, {12.3456789, 12_345_679},
+	}
+	for _, tc := range cases {
+		if got, err := FromUSD(tc.f); err != nil || got != tc.want {
+			t.Errorf("FromUSD(%v) = %d, %v, want %d", tc.f, got, err, tc.want)
+		}
+	}
+}
+
+// 2^63 micros is one past MaxInt64. The old check let it through and the
+// float-to-int conversion then differed by architecture.
+func TestFromUSDRefusesTwoToTheSixtyThree(t *testing.T) {
+	for _, f := range []float64{
+		9223372036854775808.0 / 1e6, 9.3e12, 1e13, 1e18, 1e19, 1e300, math.MaxFloat64,
+	} {
+		got, err := FromUSD(f)
+		if !errors.Is(err, ErrRange) {
+			t.Errorf("FromUSD(%v) = %d, %v, want ErrRange", f, got, err)
+		}
+	}
+	// The largest float below 2^63 micros converts exactly.
+	f := math.Nextafter(9223372036854775808.0/1e6, 0)
+	got, err := FromUSD(f)
+	if err != nil || got <= 0 {
+		t.Fatalf("FromUSD(%v) = %d, %v, want an exact amount", f, got, err)
+	}
+	if !withinAFloatStep(f, got) {
+		t.Errorf("FromUSD(%v) = %d, too far from the exact value", f, got)
+	}
+}
+
+// withinAFloatStep reports whether got is within one micro plus one float
+// step (scaled to micros) of the exact value of v.
+func withinAFloatStep(v float64, got Micro) bool {
+	scale := big.NewRat(microsPerUnit, 1)
+	exact := new(big.Rat).SetFloat64(v)
+	exact.Mul(exact, scale)
+	step := new(big.Rat).SetFloat64(math.Nextafter(v, math.Inf(1)) - v)
+	slack := step.Mul(step, scale)
+	slack.Add(slack, big.NewRat(1, 1))
+	diff := new(big.Rat).Sub(new(big.Rat).SetInt64(int64(got)), exact)
+	return diff.Abs(diff).Cmp(slack) < 0
+}
+
+// decimalMicros guards its own range, since the float pre-check in FromUSD is
+// only an approximation of it near 2^63.
+func TestDecimalMicrosRange(t *testing.T) {
+	cases := []struct {
+		in   string
+		want Micro
+		ok   bool
+	}{
+		{"9223372036854.775807", math.MaxInt64, true},
+		{"9223372036854.775808", 0, false},
+		{"9223372036854.7758071", 0, false}, // a real fraction past the sixth place rounds up out of range
+		{"9223372036854.775807000", math.MaxInt64, true},
+		{"9223372036855", 0, false},
+		{"18446744073710", 0, false},       // times 10^6 overflows 64 bits
+		{"10000000000000000000", 0, false}, // 20 digits
+		{"1", Dollar, true},
+	}
+	for _, tc := range cases {
+		got, ok := decimalMicros(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("decimalMicros(%q) = %d, %v, want %d, %v", tc.in, got, ok, tc.want, tc.ok)
 		}
 	}
 }

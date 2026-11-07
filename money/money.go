@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/bits"
+	"strconv"
 	"strings"
 )
 
@@ -121,6 +123,12 @@ func (m Micro) MinorDown(c Currency) int64 {
 }
 
 // FromMinor converts a processor's smallest unit back to Micro.
+//
+// The result is exact only for 0 <= n <= math.MaxInt64 / 10⁴ (about 9.2×10¹⁴,
+// that is $9.2 trillion) in a two-decimal currency; beyond that the product
+// wraps around int64 silently. FromMinor does not check: a caller handling
+// untrusted input, such as the Stripe adapter, checks n against that range
+// first.
 func FromMinor(n int64, c Currency) Micro {
 	return Micro(n * c.microsPerMinor())
 }
@@ -131,6 +139,14 @@ func FromMinor(n int64, c Currency) Micro {
 // negative input is an error rather than a negative amount: a cost is a
 // magnitude, and the platform's "unpriceable" sentinel is -1, which must never
 // silently become a credit.
+//
+// The conversion reads the shortest decimal that round-trips to f, so a value
+// written as a whole number of micros, 0.000123, gives exactly 123. Multiplying
+// by 10⁶ in floating point would give 123.00000000000001 and round up to 124.
+// Digits past the sixth decimal place round up, so a charge never loses money.
+// A value of 2⁶³ micros or more is ErrRange. Above about 2⁵³ micros a float
+// cannot name every micro, and the result is the micro count of its shortest
+// decimal, which is within half a float step of the float itself.
 func FromUSD(f float64) (Micro, error) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return 0, ErrNotFinite
@@ -138,11 +154,55 @@ func FromUSD(f float64) (Micro, error) {
 	if f < 0 {
 		return 0, fmt.Errorf("%w: %v", ErrNegative, f)
 	}
-	scaled := math.Ceil(f * float64(microsPerUnit))
-	if scaled > float64(math.MaxInt64) {
+	if f == 0 {
+		return 0, nil // also negative zero, whose decimal form is "-0"
+	}
+	m, ok := decimalMicros(strconv.FormatFloat(f, 'f', -1, 64))
+	// float64(math.MaxInt64) is 2⁶³, so the largest float that passes the
+	// scaled check is below 2⁶³ micros; a float that scales to 2⁶³ is refused
+	// even when its shortest decimal would fit, because it is the float for
+	// 2⁶³ itself.
+	if !ok || f*float64(microsPerUnit) >= float64(math.MaxInt64) {
 		return 0, fmt.Errorf("%w: %v", ErrRange, f)
 	}
-	return Micro(scaled), nil
+	return m, nil
+}
+
+// decimalMicros reads a plain non-negative decimal such as "0.000123" as
+// micros, rounding up when digits remain past the sixth place. It reports
+// false when the result exceeds math.MaxInt64 or the whole part is longer
+// than an int64 holds.
+func decimalMicros(s string) (Micro, bool) {
+	whole, frac, _ := strings.Cut(s, ".")
+	// math.MaxInt64 has 19 digits; a longer whole part cannot fit, and the
+	// check keeps the digit loop from overflowing.
+	if len(whole) > 19 {
+		return 0, false
+	}
+	var w uint64
+	for i := 0; i < len(whole); i++ {
+		w = w*10 + uint64(whole[i]-'0')
+	}
+	hi, lo := bits.Mul64(w, uint64(microsPerUnit))
+	if hi != 0 {
+		return 0, false
+	}
+	var fracMicros uint64
+	for i := range 6 {
+		d := uint64(0)
+		if i < len(frac) {
+			d = uint64(frac[i] - '0')
+		}
+		fracMicros = fracMicros*10 + d
+	}
+	if strings.Trim(frac[min(6, len(frac)):], "0") != "" {
+		fracMicros++ // a real fraction of a micro rounds up
+	}
+	total, carry := bits.Add64(lo, fracMicros, 0)
+	if carry != 0 || total > math.MaxInt64 {
+		return 0, false
+	}
+	return Micro(total), true
 }
 
 // String formats an amount for display: "$1.23", "€0.045100".
@@ -231,17 +291,35 @@ type Spread struct {
 //
 //	credited = max(0, gross − round_half_up(gross×bps/10⁴) − fixed)
 //
-// Never negative: a purchase smaller than the fixed cut credits zero, which is
-// why a minimum purchase amount exists alongside this rather than instead of
-// it. The percentage cut rounds half up.
+// Never negative and never above gross: a purchase smaller than the fixed cut
+// credits zero, which is why a minimum purchase amount exists alongside this
+// rather than instead of it. The percentage cut rounds half up and is computed
+// in 128 bits, so no int64 gross and no Bps overflows. A negative Bps or
+// FixedMicro counts as zero, so a bad spread cannot credit more than was paid.
 func (s Spread) Credited(gross Micro) Micro {
 	if gross <= 0 {
 		return 0
 	}
-	cut := (int64(gross)*s.Bps + 5_000) / 10_000
-	credited := Micro(int64(gross) - cut - int64(s.FixedMicro))
-	if credited < 0 {
+	g := uint64(gross)
+	var cut uint64
+	if s.Bps > 0 {
+		hi, lo := bits.Mul64(g, uint64(s.Bps))
+		lo, carry := bits.Add64(lo, 5_000, 0)
+		hi += carry // cannot wrap: hi < 2^63 as both factors are below 2^63
+		if hi >= 10_000 {
+			return 0 // the quotient needs more than 64 bits, so the cut exceeds gross
+		}
+		cut, _ = bits.Div64(hi, lo, 10_000)
+	}
+	if cut >= g {
 		return 0
 	}
-	return credited
+	left := g - cut
+	if s.FixedMicro > 0 {
+		if uint64(s.FixedMicro) >= left {
+			return 0
+		}
+		left -= uint64(s.FixedMicro)
+	}
+	return Micro(left)
 }
