@@ -27,8 +27,8 @@ func benchSession() map[string]any {
 		"email": "buyer@example.test", "name": "A. Buyer",
 		"address": map[string]any{"country": "DE", "postal_code": "10115", "city": "Berlin", "line1": "Example Str. 1"},
 	}
-	s["success_url"] = "https://platform.latere.ai/billing?session={CHECKOUT_SESSION_ID}"
-	s["cancel_url"] = "https://platform.latere.ai/billing"
+	s["success_url"] = "https://example.com/billing?session={CHECKOUT_SESSION_ID}"
+	s["cancel_url"] = "https://example.com/billing"
 	s["livemode"] = false
 	s["created"] = 1793750400
 	return s

@@ -271,8 +271,8 @@ func bindCustomer(params *stripe.CheckoutSessionCreateParams, p pay.CheckoutPara
 // the search finds none.
 //
 // Idempotency rests on the create's idempotency key, not on the search. Stripe
-// search is eventually consistent — a customer can take up to a minute to
-// become searchable — so a retry moments after the first call may well miss and
+// search is eventually consistent (a customer can take up to a minute to
+// become searchable), so a retry moments after the first call may well miss and
 // reach the create. A key derived from the email makes that create return the
 // original customer rather than mint a second one.
 func (a *Adapter) EnsureCustomer(ctx context.Context, email string, meta map[string]string) (pay.CustomerRef, error) {

@@ -109,7 +109,7 @@ func TestParseWebhook_ToleratesAnEndpointOnAnotherAPIVersion(t *testing.T) {
 	}
 }
 
-func TestParseWebhook_UnmodelledEventsAreIgnoredNotRefused(t *testing.T) {
+func TestParseWebhook_UnmodeledEventsAreIgnoredNotRefused(t *testing.T) {
 	a := newAdapter(t, newStub(t))
 	for _, typ := range []string{
 		"customer.discount.created",

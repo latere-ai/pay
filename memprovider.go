@@ -22,8 +22,8 @@ const MemHeader = "X-Pay-Signature"
 //
 // CreateCheckout records its params and hands back a canned URL; ParseWebhook
 // accepts a JSON-encoded Event when the signature header matches. That is
-// enough to drive a product's whole money path — checkout, credit, refund,
-// auto-recharge — with no processor and no network.
+// enough to drive a product's whole money path (checkout, credit, refund,
+// auto-recharge) with no processor and no network.
 //
 // It is also what an unconfigured deployment can mount: set Unconfigured and
 // every operation returns ErrUnconfigured.

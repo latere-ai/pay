@@ -114,14 +114,14 @@ func RunProviderContract(t *testing.T, newProvider Factory, caps []pay.Capabilit
 		}
 	})
 
-	t.Run("an unmodelled event reduces to KindIgnored, not an error", func(t *testing.T) {
+	t.Run("an unmodeled event reduces to KindIgnored, not an error", func(t *testing.T) {
 		p := newProvider(t)
 		ev, err := p.ParseWebhook(unknownEventPayload(t, p), signedHeader(p))
 		if errors.Is(err, pay.ErrUnconfigured) || errors.Is(err, pay.ErrBadSignature) {
 			return // the adapter cannot be driven offline; nothing to assert
 		}
 		if err != nil {
-			t.Fatalf("ParseWebhook on an unmodelled event returned an error: %v", err)
+			t.Fatalf("ParseWebhook on an unmodeled event returned an error: %v", err)
 		}
 		if ev.Kind != pay.KindIgnored {
 			t.Errorf("Kind = %q, want KindIgnored so the delivery is acknowledged and dropped", ev.Kind)

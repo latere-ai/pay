@@ -22,8 +22,8 @@ import (
 // The harness. stripe-go lets a caller replace the HTTP backend, so the whole
 // adapter runs against an httptest.Server returning recorded payloads. That is
 // what makes a vendor adapter coverable at all, and it is what puts the nested
-// form encoding for line_items[0][price_data][...] — the part most likely to
-// break silently on an SDK bump — under assertion rather than under hope.
+// form encoding for line_items[0][price_data][...], the part most likely to
+// break silently on an SDK bump, under assertion rather than under hope.
 
 const (
 	testSecretKey     = "sk_test_harness"

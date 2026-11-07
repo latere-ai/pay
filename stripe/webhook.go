@@ -132,8 +132,8 @@ func ignored(payload []byte) pay.Event {
 // session reduces a checkout session to a credit, or to nothing.
 //
 // A synchronous card pays immediately, so `completed` is already `paid`. An
-// async method — SEPA Direct Debit, iDEAL, Bancontact, the ones EU customers
-// reach for — leaves `completed` unpaid and confirms later with
+// async method (SEPA Direct Debit, iDEAL, Bancontact, the ones EU customers
+// reach for) leaves `completed` unpaid and confirms later with
 // `async_payment_succeeded`. Only a *paid* session credits, so the two
 // deliveries for one async purchase credit exactly once and the ledger's dedupe
 // on the payment intent is the second line of defense rather than the only one.

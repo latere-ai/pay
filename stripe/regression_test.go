@@ -200,7 +200,7 @@ func TestRegression_AReversalInAnotherCurrencyStillPosts(t *testing.T) {
 	// it credited, found through Ref, because a EUR charge converted at
 	// purchase time and reversed at a later rate would leave a drift nothing
 	// can account for. So an amount this package cannot express in USD is
-	// reported as zero — "not reported" — and the reversal still posts. The
+	// reported as zero, "not reported", and the reversal still posts. The
 	// paid path fails closed instead, because there Gross *is* the credit.
 	a := newAdapter(t, newStub(t))
 	payload := eventPayload(t, eventChargeRefunded, map[string]any{

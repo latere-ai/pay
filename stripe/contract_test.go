@@ -141,8 +141,8 @@ func TestHas_DeclaresTaxOnlyWhenTheDeploymentHasIt(t *testing.T) {
 // FuzzParseWebhook drives the decode path with unconstrained bytes.
 //
 // The payload is signed inside the fuzz function with the harness secret,
-// because an unsigned input dies at the HMAC and would leave the JSON decoding
-// — the part that actually takes arbitrary bytes off the internet — untouched.
+// because an unsigned input dies at the HMAC and would leave the JSON decoding,
+// the part that actually takes arbitrary bytes off the internet, untouched.
 func FuzzParseWebhook(f *testing.F) {
 	f.Add(eventPayload(f, eventSessionCompleted, paidSession()))
 	f.Add(eventPayload(f, eventChargeRefunded, map[string]any{
