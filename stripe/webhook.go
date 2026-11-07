@@ -9,7 +9,11 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	stripe "github.com/stripe/stripe-go/v87"
 	"github.com/stripe/stripe-go/v87/webhook"
@@ -71,6 +75,9 @@ func (a *Adapter) ParseWebhook(payload []byte, h http.Header) (pay.Event, error)
 	if err != nil {
 		return pay.Event{}, constructError(err)
 	}
+	if err := notFromTheFuture(h.Get(signatureHeader), time.Now()); err != nil {
+		return pay.Event{}, err
+	}
 	raw := eventObject(ev)
 	switch ev.Type {
 	case eventSessionCompleted, eventSessionAsyncPaid:
@@ -86,6 +93,51 @@ func (a *Adapter) ParseWebhook(payload []byte, h http.Header) (pay.Event, error)
 	default:
 		return ignored(payload), nil
 	}
+}
+
+// notFromTheFuture refuses a signature whose timestamp is further ahead of now
+// than the tolerance the SDK allows in the past.
+//
+// stripe-go rejects only old timestamps. Without this, whoever holds the
+// signing secret can sign a delivery dated years ahead, and it would verify
+// for as long as the secret lives instead of for a few minutes. The SDK has
+// already parsed the header by the time this runs, so an unreadable timestamp
+// here is refused as a bad signature rather than trusted.
+func notFromTheFuture(header string, now time.Time) error {
+	ts, ok := signedAt(header)
+	if !ok || ts.After(now.Add(webhook.DefaultTolerance)) {
+		return fmt.Errorf("pay/stripe: %w: the signature is dated in the future", pay.ErrBadSignature)
+	}
+	return nil
+}
+
+// signedAt reads the t= element of a Stripe-Signature header.
+func signedAt(header string) (time.Time, bool) {
+	for part := range strings.SplitSeq(header, ",") {
+		v, found := strings.CutPrefix(strings.TrimSpace(part), "t=")
+		if !found {
+			continue
+		}
+		sec, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return time.Unix(sec, 0), true
+	}
+	return time.Time{}, false
+}
+
+// usdMicro converts a minor-unit amount taken from a delivery.
+//
+// A signature proves who posted the bytes, not that the number is sane, and
+// money.FromMinor wraps around int64 silently. An amount that is negative or
+// too large to convert is refused with money.ErrRange, which is not a bad
+// signature: the delivery verified, and what is wrong is its content.
+func usdMicro(minor int64, field string) (money.Micro, error) {
+	if minor < 0 || minor > math.MaxInt64/int64(money.FromMinor(1, money.USD)) {
+		return 0, fmt.Errorf("pay/stripe: %w: %s %d", money.ErrRange, field, minor)
+	}
+	return money.FromMinor(minor, money.USD), nil
 }
 
 // eventObject is the delivery's data.object, or nil when there is none.
@@ -171,7 +223,11 @@ func (a *Adapter) session(raw, payload []byte) (pay.Event, error) {
 	// means "not reported" and a consumer that needs the distinction asks
 	// Has(CapTax).
 	if a.Has(pay.CapTax) && s.TotalDetails != nil {
-		e.Tax = money.FromMinor(s.TotalDetails.AmountTax, money.USD)
+		tax, err := usdMicro(s.TotalDetails.AmountTax, "amount_tax")
+		if err != nil {
+			return pay.Event{}, err
+		}
+		e.Tax = tax
 		e.Net = gross - e.Tax
 	}
 	return e, nil
@@ -196,7 +252,7 @@ func sessionGross(s *stripe.CheckoutSession) (money.Micro, error) {
 		// the operator has to look at.
 		return 0, fmt.Errorf("%w: session %s is in %s", ErrNotUSD, s.ID, cur)
 	}
-	return money.FromMinor(minor, money.USD), nil
+	return usdMicro(minor, "amount_total")
 }
 
 // intentSucceeded credits an off-session charge ChargeSaved created, and
@@ -225,12 +281,16 @@ func intentSucceeded(raw, payload []byte) (pay.Event, error) {
 		// so this is an intent created elsewhere with the marker copied onto it.
 		return pay.Event{}, fmt.Errorf("%w: payment intent %s is in %s", ErrNotUSD, pi.ID, cur)
 	}
+	gross, err := usdMicro(pi.AmountReceived, "amount_received")
+	if err != nil {
+		return pay.Event{}, err
+	}
 	e := pay.Event{
 		Kind:     pay.KindPaid,
 		Provider: pay.Stripe,
 		Email:    cmp.Or(pi.Metadata["email"], pi.ReceiptEmail),
 		Ref:      pi.ID,
-		Gross:    money.FromMinor(pi.AmountReceived, money.USD),
+		Gross:    gross,
 		Meta:     pi.Metadata,
 		Raw:      payload,
 	}
@@ -302,12 +362,16 @@ func refunded(raw, payload []byte) (pay.Event, error) {
 	if err := reversible(c.PaymentIntent, ref); err != nil {
 		return pay.Event{}, err
 	}
+	gross, err := usdOrZero(amount, cur, "amount_refunded")
+	if err != nil {
+		return pay.Event{}, err
+	}
 	return pay.Event{
 		Kind:        pay.KindRefunded,
 		Provider:    pay.Stripe,
 		Ref:         c.PaymentIntent,
 		ReversalRef: ref,
-		Gross:       usdOrZero(amount, cur),
+		Gross:       gross,
 		Meta:        c.Metadata,
 		Raw:         payload,
 	}, nil
@@ -368,12 +432,16 @@ func disputed(raw, payload []byte) (pay.Event, error) {
 	if err := reversible(d.PaymentIntent, d.ID); err != nil {
 		return pay.Event{}, err
 	}
+	gross, err := usdOrZero(d.Amount, d.Currency, "amount")
+	if err != nil {
+		return pay.Event{}, err
+	}
 	return pay.Event{
 		Kind:        pay.KindDisputed,
 		Provider:    pay.Stripe,
 		Ref:         d.PaymentIntent,
 		ReversalRef: d.ID,
-		Gross:       usdOrZero(d.Amount, d.Currency),
+		Gross:       gross,
 		Meta:        d.Metadata,
 		Raw:         payload,
 	}, nil
@@ -403,10 +471,11 @@ func paymentFailed(raw, payload []byte) (pay.Event, error) {
 
 // usdOrZero converts a minor amount, reporting zero for any currency that is
 // not USD. Zero means "not reported", which on a reversal is safe: the ledger
-// reverses by what it credited, keyed on Ref.
-func usdOrZero(minor int64, cur string) money.Micro {
+// reverses by what it credited, keyed on Ref. An amount that is out of range
+// is still refused, as for a credit.
+func usdOrZero(minor int64, cur, field string) (money.Micro, error) {
 	if money.Currency(cur) != money.USD {
-		return 0
+		return 0, nil
 	}
-	return money.FromMinor(minor, money.USD)
+	return usdMicro(minor, field)
 }

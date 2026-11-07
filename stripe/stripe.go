@@ -111,6 +111,35 @@ type Config struct {
 	backend stripe.Backend
 }
 
+// redacted is what String and GoString print in place of a secret that is set.
+const redacted = "[redacted]"
+
+// String formats the Config for %v and %s without its secrets: SecretKey and
+// WebhookSecret print as "[redacted]" when set and as empty when not.
+//
+// A Config is easy to log by accident, whole, in a startup line or an error
+// that wraps it. The value receiver covers both Config and *Config.
+func (c Config) String() string {
+	return fmt.Sprintf("stripe.Config{SecretKey:%s WebhookSecret:%s Tax:%t ProductName:%q}",
+		redact(c.SecretKey), redact(c.WebhookSecret), c.Tax, c.ProductName)
+}
+
+// GoString formats the Config for %#v, also inside a struct printed with %#v,
+// with the same redaction as String.
+func (c Config) GoString() string {
+	return fmt.Sprintf("stripe.Config{SecretKey:%q, WebhookSecret:%q, Tax:%t, ProductName:%q}",
+		redact(c.SecretKey), redact(c.WebhookSecret), c.Tax, c.ProductName)
+}
+
+// redact hides a secret but keeps whether one was set, which is what a person
+// reading a log needs to know.
+func redact(secret string) string {
+	if secret == "" {
+		return ""
+	}
+	return redacted
+}
+
 // Adapter implements pay.Provider over Stripe.
 type Adapter struct {
 	sc            *stripe.Client
@@ -179,6 +208,9 @@ func (a *Adapter) Has(c pay.Capability) bool { return slices.Contains(a.caps, c)
 func (a *Adapter) CreateCheckout(ctx context.Context, p pay.CheckoutParams) (pay.Checkout, error) {
 	if !a.configured {
 		return pay.Checkout{}, pay.ErrUnconfigured
+	}
+	if p.Amount <= 0 {
+		return pay.Checkout{}, fmt.Errorf("pay/stripe: %w", pay.ErrNotPositive)
 	}
 	cur, err := currency(p.Currency)
 	if err != nil {
@@ -346,6 +378,9 @@ func (a *Adapter) ChargeSaved(ctx context.Context, p pay.SavedChargeParams) (pay
 	}
 	if p.Customer.Provider != pay.Stripe {
 		return pay.Charge{}, fmt.Errorf("%w: %s", ErrForeignCustomer, p.Customer.Provider)
+	}
+	if p.Amount <= 0 {
+		return pay.Charge{}, fmt.Errorf("pay/stripe: %w", pay.ErrNotPositive)
 	}
 	cur, err := currency(p.Currency)
 	if err != nil {
