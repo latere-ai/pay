@@ -102,17 +102,17 @@ func TestOperationsPropagateAFaultAtEveryStep(t *testing.T) {
 		{"adjust", 1, func(o ledger.Ops) error {
 			return o.Adjust(ctx, ledger.Posting{Holder: h, Amount: money.Dollar, Ref: "f-adj"}, true)
 		}},
-		{"hold", 3, func(o ledger.Ops) error {
+		{"hold", 5, func(o ledger.Ops) error {
 			return o.Hold(ctx, ledger.Posting{Holder: h, Amount: money.Dollar, Group: "f-hold"})
 		}},
-		{"transfer", 4, func(o ledger.Ops) error {
+		{"transfer", 5, func(o ledger.Ops) error {
 			return o.Transfer(ctx, ledger.Transfer{From: h, To: other, Amount: money.Dollar, Ref: "f-mv"})
 		}},
-		{"settle", 3, func(o ledger.Ops) error {
+		{"settle", 5, func(o ledger.Ops) error {
 			_, err := o.Settle(ctx, ledger.Settlement{Holder: h, Group: "held", Cost: money.Dollar})
 			return err
 		}},
-		{"reverse", 5, func(o ledger.Ops) error {
+		{"reverse", 6, func(o ledger.Ops) error {
 			_, err := o.Reverse(ctx, ledger.Reversal{Of: "seed", Ref: "f-rev"})
 			return err
 		}},
@@ -148,9 +148,9 @@ func TestSettleReportsAFailureAfterItsDebitLands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	// Two statements land (the debit insert and the held lookup); the release
-	// insert is the third and fails.
-	ops := s.Bind(&faultTx{Tx: tx, remaining: 2})
+	// Four statements land (the group lock, the holder check, the debit insert
+	// and the held lookup); the release insert is the fifth and fails.
+	ops := s.Bind(&faultTx{Tx: tx, remaining: 4})
 	if _, err := ops.Settle(ctx, ledger.Settlement{Holder: h, Group: "g", Cost: money.Dollar}); err == nil {
 		t.Error("Settle reported success although its release failed")
 	}

@@ -73,6 +73,18 @@ CREATE INDEX ledger_entries_group ON ledger_entries (grp) WHERE grp IS NOT NULL;
 -- Paging a statement reads one holder newest-first.
 CREATE INDEX ledger_entries_holder_time ON ledger_entries (holder, created_at DESC);
 `},
+	{2, `
+-- The reference of the entry a reversal undoes. An entry is reversed at most
+-- once, and the database enforces it the way it enforces one debit per group:
+-- a second reversal of the same entry, under any reference of its own, is
+-- refused by the index below instead of clawing the same money back again.
+-- Reversals written before this version have NULL here, so the index does not
+-- bind them and an entry they reversed can still be reversed once more.
+ALTER TABLE ledger_entries ADD COLUMN reverses TEXT;
+
+CREATE UNIQUE INDEX ledger_entries_one_reversal ON ledger_entries (reverses)
+	WHERE reverses IS NOT NULL;
+`},
 }
 
 // DefaultMigrationLock is this migrator's advisory-lock id.
@@ -96,11 +108,20 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 
 // MigrateWithLock is Migrate with an explicit advisory-lock id.
 func MigrateWithLock(ctx context.Context, pool *pgxpool.Pool, lock int64) error {
-	if _, err := pool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS ledger_migrations (
-			version    INT PRIMARY KEY,
-			applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-		)`); err != nil {
+	// The version table is created behind the lock too. Created on the pool
+	// first, two processes starting on a database that has never seen the
+	// ledger both try to create it, and the loser dies on a catalog conflict.
+	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lock); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `
+			CREATE TABLE IF NOT EXISTS ledger_migrations (
+				version    INT PRIMARY KEY,
+				applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+			)`)
+		return err
+	}); err != nil {
 		return fmt.Errorf("pgledger: create migrations table: %w", err)
 	}
 	for _, m := range migrations {

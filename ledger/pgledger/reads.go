@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"latere.ai/x/pay/ledger"
 	"latere.ai/x/pay/money"
@@ -17,16 +18,12 @@ import (
 // Balance is everything a holder received less everything spent, excluding
 // holds: a hold has not been spent.
 func (s *Store) Balance(ctx context.Context, h ledger.Holder) (money.Micro, error) {
-	var v money.Micro
-	err := s.pool.QueryRow(ctx, balanceSQL, string(h)).Scan(&v)
-	return v, err
+	return scanSum(s.pool.QueryRow(ctx, balanceSQL, string(h)))
 }
 
 // Available is Balance less every open hold: what a holder may still commit.
 func (s *Store) Available(ctx context.Context, h ledger.Holder) (money.Micro, error) {
-	var v money.Micro
-	err := s.pool.QueryRow(ctx, availableSQL, string(h)).Scan(&v)
-	return v, err
+	return scanSum(s.pool.QueryRow(ctx, availableSQL, string(h)))
 }
 
 // BalancesFor folds the settled balance of every given holder in one pass, so a
@@ -51,8 +48,12 @@ func (s *Store) BalancesFor(ctx context.Context, hs []ledger.Holder) (map[ledger
 	defer rows.Close()
 	for rows.Next() {
 		var h string
-		var v money.Micro
-		if err := rows.Scan(&h, &v); err != nil {
+		var n pgtype.Numeric
+		if err := rows.Scan(&h, &n); err != nil {
+			return nil, err
+		}
+		v, err := microOf(n)
+		if err != nil {
 			return nil, err
 		}
 		out[ledger.Holder(h)] = v
@@ -114,12 +115,13 @@ func (s *Store) EntryByRef(ctx context.Context, ref string) (ledger.Entry, bool,
 
 // NegativeHolders returns every holder in a namespace whose settled balance is
 // below zero: the accounts that owe. Most-owed first, so an operator sees the
-// worst debt at the top. An empty namespace spans all of them.
+// worst debt at the top. An empty namespace spans all of them. The namespace is
+// compared as text, never as a pattern: "%" and "_" are ordinary characters.
 func (s *Store) NegativeHolders(ctx context.Context, namespace string) ([]ledger.HolderBalance, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT holder, SUM(amount) AS balance FROM ledger_entries
 		WHERE kind NOT IN ('hold','release')
-		  AND ($1 = '' OR holder LIKE $1 || ':%')
+		  AND ($1 = '' OR split_part(holder, ':', 1) = $1)
 		GROUP BY holder
 		HAVING SUM(amount) < 0
 		ORDER BY balance ASC, holder ASC`, namespace)
@@ -131,7 +133,12 @@ func (s *Store) NegativeHolders(ctx context.Context, namespace string) ([]ledger
 	for rows.Next() {
 		var hb ledger.HolderBalance
 		var h string
-		if err := rows.Scan(&h, &hb.Balance); err != nil {
+		var n pgtype.Numeric
+		if err := rows.Scan(&h, &n); err != nil {
+			return nil, err
+		}
+		var err error
+		if hb.Balance, err = microOf(n); err != nil {
 			return nil, err
 		}
 		hb.Holder = ledger.Holder(h)
@@ -151,13 +158,11 @@ func (s *Store) TotalOutstanding(ctx context.Context, namespaces ...string) (mon
 	if namespaces == nil {
 		namespaces = []string{}
 	}
-	var v money.Micro
-	err := s.pool.QueryRow(ctx, `
+	return scanSum(s.pool.QueryRow(ctx, `
 		SELECT COALESCE(SUM(amount), 0) FROM ledger_entries
 		WHERE kind NOT IN ('hold','release')
 		  AND (cardinality($1::text[]) = 0 OR split_part(holder, ':', 1) = ANY($1))`,
-		namespaces).Scan(&v)
-	return v, err
+		namespaces))
 }
 
 // scanEntry reads one row into an Entry, decoding the label JSON.

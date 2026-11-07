@@ -12,6 +12,7 @@ package ledgertest
 import (
 	"context"
 	"errors"
+	"math"
 	"strconv"
 	"sync"
 	"testing"
@@ -576,6 +577,374 @@ func RunStoreContract(t *testing.T, newStore Factory) {
 		}
 		if got := balance(t, s, ctx, alice); got != 10*money.Dollar {
 			t.Errorf("source = %s, want $10 back", got.String(money.USD))
+		}
+	})
+
+	t.Run("a reversal applies once per entry, whatever its reference", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: 100 * money.Dollar, Ref: "pi_1"})
+		first, err := s.Reverse(ctx, ledger.Reversal{Of: "pi_1", Ref: "re_1"})
+		if err != nil || !first.Applied {
+			t.Fatalf("first Reverse = %+v, %v, want it applied", first, err)
+		}
+		// A second refund, or a dispute, of the same purchase under its own
+		// reference must not claw the same credit back again.
+		second, err := s.Reverse(ctx, ledger.Reversal{Of: "pi_1", Ref: "re_2"})
+		if err != nil {
+			t.Fatalf("second Reverse: %v", err)
+		}
+		if second.Applied {
+			t.Error("a second reversal of one entry reported that it applied")
+		}
+		if got := balance(t, s, ctx, alice); got != 0 {
+			t.Errorf("balance = %s, want $0: the credit was reversed twice", got.String(money.USD))
+		}
+		if _, ok, err := s.EntryByRef(ctx, "re_2"); err != nil || ok {
+			t.Errorf("EntryByRef(re_2) = %v, %v: the refused reversal left an entry", ok, err)
+		}
+		// The first reference still replays as a no-op.
+		again, err := s.Reverse(ctx, ledger.Reversal{Of: "pi_1", Ref: "re_1"})
+		if err != nil || again.Applied {
+			t.Errorf("replay of re_1 = %+v, %v, want a no-op", again, err)
+		}
+	})
+
+	t.Run("concurrent reversals of one entry apply once", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: 100 * money.Dollar, Ref: "pi_1"})
+		const n = 32
+		var wg sync.WaitGroup
+		results := make([]ledger.Effect, n)
+		errs := make([]error, n)
+		wg.Add(n)
+		for i := range n {
+			go func(i int) {
+				defer wg.Done()
+				// Half the callers share one reversal reference, half bring
+				// their own: both kinds of duplicate must collapse to one.
+				ref := "re_shared"
+				if i%2 == 1 {
+					ref = "re_" + strconv.Itoa(i)
+				}
+				results[i], errs[i] = s.Reverse(ctx, ledger.Reversal{Of: "pi_1", Ref: ref})
+			}(i)
+		}
+		wg.Wait()
+		applied := 0
+		for i := range n {
+			if errs[i] != nil {
+				t.Errorf("Reverse %d: %v", i, errs[i])
+			}
+			if results[i].Applied {
+				applied++
+			}
+		}
+		if applied != 1 {
+			t.Errorf("%d callers were told the reversal applied, want exactly 1", applied)
+		}
+		if got := balance(t, s, ctx, alice); got != 0 {
+			t.Errorf("balance = %s, want $0: reversed once", got.String(money.USD))
+		}
+	})
+
+	t.Run("a replayed hold or transfer is idempotent after the funds are spent", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: 10 * money.Dollar, Ref: "seed"})
+		mustCredit(t, s, ctx, ledger.Posting{Holder: pot, Amount: 10 * money.Dollar, Ref: "seed_pot"})
+		// Each write uses every dollar its holder has, so the replay cannot pass
+		// a funds check and only a lookup of the reference can answer it.
+		hold := ledger.Posting{Holder: pot, Amount: 10 * money.Dollar, Ref: "hold_1", Group: "job-1"}
+		if err := s.Hold(ctx, hold); err != nil {
+			t.Fatalf("Hold: %v", err)
+		}
+		if err := s.Hold(ctx, hold); err != nil {
+			t.Errorf("replayed Hold = %v, want nil", err)
+		}
+		mv := ledger.Transfer{From: alice, To: bob, Amount: 10 * money.Dollar, Ref: "mv_1"}
+		if err := s.Transfer(ctx, mv); err != nil {
+			t.Fatalf("Transfer: %v", err)
+		}
+		if err := s.Transfer(ctx, mv); err != nil {
+			t.Errorf("replayed Transfer = %v, want nil", err)
+		}
+		if got := available(t, s, ctx, pot); got != 0 {
+			t.Errorf("available = %s, want $0: the hold was taken twice or not at all", got.String(money.USD))
+		}
+		if got := balance(t, s, ctx, bob); got != 10*money.Dollar {
+			t.Errorf("destination = %s, want $10", got.String(money.USD))
+		}
+	})
+
+	t.Run("a reference reused with another payload is refused", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: 100 * money.Dollar, Ref: "pi_1"})
+		mustCredit(t, s, ctx, ledger.Posting{Holder: bob, Amount: 100 * money.Dollar, Ref: "pi_2"})
+		conflict := func(name string, err error) {
+			t.Helper()
+			if !errors.Is(err, ledger.ErrRefConflict) {
+				t.Errorf("%s = %v, want ErrRefConflict", name, err)
+			}
+		}
+		conflict("credit to another holder", s.Credit(ctx, ledger.Posting{Holder: bob, Amount: 100 * money.Dollar, Ref: "pi_1"}))
+		conflict("credit of another amount", s.Credit(ctx, ledger.Posting{Holder: alice, Amount: 50 * money.Dollar, Ref: "pi_1"}))
+		conflict("debit of a credit's reference", s.Debit(ctx, ledger.Posting{Holder: alice, Amount: 100 * money.Dollar, Ref: "pi_1"}))
+		conflict("adjust of a credit's reference", s.Adjust(ctx, ledger.Posting{Holder: alice, Amount: 100 * money.Dollar, Ref: "pi_1"}, true))
+		conflict("hold of a credit's reference", s.Hold(ctx, ledger.Posting{Holder: alice, Amount: 100 * money.Dollar, Ref: "pi_1", Group: "g"}))
+		conflict("transfer of a credit's reference", s.Transfer(ctx, ledger.Transfer{From: alice, To: bob, Amount: money.Dollar, Ref: "pi_1"}))
+		_, err := s.Reverse(ctx, ledger.Reversal{Of: "pi_2", Ref: "pi_1"})
+		conflict("reversal under a credit's reference", err)
+		_, err = s.Reverse(ctx, ledger.Reversal{Of: "pi_1", Ref: "pi_1"})
+		conflict("reversal under its own target's reference", err)
+
+		// A hold or a transfer replayed with another payload is refused too.
+		if err := s.Hold(ctx, ledger.Posting{Holder: alice, Amount: 10 * money.Dollar, Ref: "h1", Group: "g1"}); err != nil {
+			t.Fatalf("Hold: %v", err)
+		}
+		conflict("hold with another amount", s.Hold(ctx, ledger.Posting{Holder: alice, Amount: 20 * money.Dollar, Ref: "h1", Group: "g1"}))
+		conflict("hold with another group", s.Hold(ctx, ledger.Posting{Holder: alice, Amount: 10 * money.Dollar, Ref: "h1", Group: "g2"}))
+		if err := s.Transfer(ctx, ledger.Transfer{From: alice, To: pot, Amount: money.Dollar, Ref: "m1"}); err != nil {
+			t.Fatalf("Transfer: %v", err)
+		}
+		conflict("transfer with another amount", s.Transfer(ctx, ledger.Transfer{From: alice, To: pot, Amount: 2 * money.Dollar, Ref: "m1"}))
+		conflict("transfer from another holder", s.Transfer(ctx, ledger.Transfer{From: bob, To: pot, Amount: money.Dollar, Ref: "m1"}))
+
+		// The same write again is not a conflict.
+		if err := s.Debit(ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: "d1"}); err != nil {
+			t.Fatalf("Debit: %v", err)
+		}
+		if err := s.Debit(ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: "d1"}); err != nil {
+			t.Errorf("replayed Debit = %v, want nil", err)
+		}
+		if err := s.Adjust(ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: "a1"}, false); err != nil {
+			t.Fatalf("Adjust: %v", err)
+		}
+		if err := s.Adjust(ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: "a1"}, false); err != nil {
+			t.Errorf("replayed Adjust = %v, want nil", err)
+		}
+		conflict("adjust in the other direction", s.Adjust(ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: "a1"}, true))
+
+		// Every refused write left the books as they were.
+		if got := balance(t, s, ctx, alice); got != 100*money.Dollar-money.Dollar-money.Dollar-money.Dollar {
+			t.Errorf("alice = %s, want $97", got.String(money.USD))
+		}
+		if got := balance(t, s, ctx, bob); got != 100*money.Dollar {
+			t.Errorf("bob = %s, want $100", got.String(money.USD))
+		}
+	})
+
+	t.Run("a reference with surrounding space is refused", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: 10 * money.Dollar, Ref: "pi_1"})
+		for _, ref := range []string{" ", "pi_2 ", " pi_2", "\tpi_2\n"} {
+			bad := func(name string, err error) {
+				t.Helper()
+				if !errors.Is(err, ledger.ErrBadRef) {
+					t.Errorf("%s with ref %q = %v, want ErrBadRef", name, ref, err)
+				}
+			}
+			bad("Credit", s.Credit(ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: ref}))
+			bad("Debit", s.Debit(ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: ref}))
+			bad("Adjust", s.Adjust(ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: ref}, true))
+			bad("Hold", s.Hold(ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Ref: ref, Group: "g"}))
+			bad("Transfer", s.Transfer(ctx, ledger.Transfer{From: alice, To: bob, Amount: money.Dollar, Ref: ref}))
+			_, err := s.Reverse(ctx, ledger.Reversal{Of: "pi_1", Ref: ref})
+			bad("Reverse (its reference)", err)
+			_, err = s.Reverse(ctx, ledger.Reversal{Of: ref, Ref: "re_1"})
+			bad("Reverse (the original)", err)
+		}
+		if got := balance(t, s, ctx, alice); got != 10*money.Dollar {
+			t.Errorf("balance = %s, want $10: a refused write landed", got.String(money.USD))
+		}
+	})
+
+	t.Run("a transfer, a hold or a release cannot be reversed", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: 10 * money.Dollar, Ref: "seed"})
+		if err := s.Transfer(ctx, ledger.Transfer{From: alice, To: bob, Amount: 4 * money.Dollar, Ref: "mv_1"}); err != nil {
+			t.Fatalf("Transfer: %v", err)
+		}
+		if err := s.Hold(ctx, ledger.Posting{Holder: alice, Amount: 2 * money.Dollar, Ref: "hold_1", Group: "g"}); err != nil {
+			t.Fatalf("Hold: %v", err)
+		}
+		// A release carries no reference, so it cannot be named at all; the
+		// transfer and the hold are the two a caller can reach.
+		for _, of := range []string{"mv_1", "hold_1"} {
+			if _, err := s.Reverse(ctx, ledger.Reversal{Of: of, Ref: "re_" + of}); !errors.Is(err, ledger.ErrNotReversible) {
+				t.Errorf("Reverse of %s = %v, want ErrNotReversible", of, err)
+			}
+		}
+		total, err := s.TotalOutstanding(ctx)
+		if err != nil || total != 10*money.Dollar {
+			t.Errorf("total outstanding = %s, %v, want $10: reversing a leg created money", total.String(money.USD), err)
+		}
+		if got := available(t, s, ctx, alice); got != 4*money.Dollar {
+			t.Errorf("available = %s, want $4", got.String(money.USD))
+		}
+	})
+
+	t.Run("a hold on a settled group is refused", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: 100 * money.Dollar, Ref: "seed"})
+		if err := s.Hold(ctx, ledger.Posting{Holder: alice, Amount: 40 * money.Dollar, Group: "job"}); err != nil {
+			t.Fatalf("Hold: %v", err)
+		}
+		if ok, err := s.Settle(ctx, ledger.Settlement{Holder: alice, Group: "job", Cost: 10 * money.Dollar}); err != nil || !ok {
+			t.Fatalf("Settle = %v, %v", ok, err)
+		}
+		// A late duplicate admission of the same unit of work.
+		if err := s.Hold(ctx, ledger.Posting{Holder: alice, Amount: 40 * money.Dollar, Group: "job"}); !errors.Is(err, ledger.ErrSettled) {
+			t.Errorf("Hold on a settled group = %v, want ErrSettled", err)
+		}
+		// A group settled without ever holding is closed all the same.
+		if ok, err := s.Settle(ctx, ledger.Settlement{Holder: alice, Group: "bare", Cost: money.Dollar}); err != nil || !ok {
+			t.Fatalf("Settle = %v, %v", ok, err)
+		}
+		if err := s.Hold(ctx, ledger.Posting{Holder: alice, Amount: money.Dollar, Group: "bare"}); !errors.Is(err, ledger.ErrSettled) {
+			t.Errorf("Hold on a group settled without a hold = %v, want ErrSettled", err)
+		}
+		if a, b := available(t, s, ctx, alice), balance(t, s, ctx, alice); a != b {
+			t.Errorf("available %s, balance %s: credit is held with nothing to release it", a.String(money.USD), b.String(money.USD))
+		}
+	})
+
+	t.Run("a settlement names the holder of its hold", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: 100 * money.Dollar, Ref: "seed"})
+		if err := s.Hold(ctx, ledger.Posting{Holder: alice, Amount: 100 * money.Dollar, Group: "job"}); err != nil {
+			t.Fatalf("Hold: %v", err)
+		}
+		ok, err := s.Settle(ctx, ledger.Settlement{Holder: bob, Group: "job", Cost: 0})
+		if !errors.Is(err, ledger.ErrWrongHolder) || ok {
+			t.Errorf("Settle by another holder = %v, %v, want ErrWrongHolder", ok, err)
+		}
+		if got := available(t, s, ctx, bob); got != 0 {
+			t.Errorf("the other holder has %s available: credit appeared from nowhere", got.String(money.USD))
+		}
+		if n := len(entries(t, s, ctx, bob)); n != 0 {
+			t.Errorf("the refused settlement wrote %d entries for the other holder", n)
+		}
+		if got := available(t, s, ctx, alice); got != 0 {
+			t.Errorf("available = %s, want $0: the hold was released by the refused settlement", got.String(money.USD))
+		}
+		// The holder who took the hold can still settle it.
+		if ok, err := s.Settle(ctx, ledger.Settlement{Holder: alice, Group: "job", Cost: 0}); err != nil || !ok {
+			t.Errorf("Settle by the holder = %v, %v", ok, err)
+		}
+	})
+
+	t.Run("a debit cannot carry a group", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: 100 * money.Dollar, Ref: "seed"})
+		if err := s.Hold(ctx, ledger.Posting{Holder: alice, Amount: 40 * money.Dollar, Group: "job"}); err != nil {
+			t.Fatalf("Hold: %v", err)
+		}
+		if err := s.Debit(ctx, ledger.Posting{Holder: alice, Amount: 5 * money.Dollar, Group: "job", Ref: "d1"}); !errors.Is(err, ledger.ErrDebitGroup) {
+			t.Errorf("Debit with a group = %v, want ErrDebitGroup", err)
+		}
+		if ok, err := s.Settle(ctx, ledger.Settlement{Holder: alice, Group: "job", Cost: 5 * money.Dollar}); err != nil || !ok {
+			t.Fatalf("Settle = %v, %v: the refused debit closed the group", ok, err)
+		}
+		if a, b := available(t, s, ctx, alice), balance(t, s, ctx, alice); a != b || b != 95*money.Dollar {
+			t.Errorf("available %s, balance %s, want both $95", a.String(money.USD), b.String(money.USD))
+		}
+	})
+
+	t.Run("a failed unit keeps what other writers wrote", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: 5 * money.Dollar, Ref: "seed"})
+		type outcome struct {
+			err  error
+			seen money.Micro
+		}
+		done := make(chan outcome, 1)
+		sentinel := errors.New("caller changed its mind")
+		err := s.Within(ctx, func(ctx context.Context, ops ledger.Ops) error {
+			if err := ops.Credit(ctx, ledger.Posting{Holder: alice, Amount: 7 * money.Dollar, Ref: "mine"}); err != nil {
+				return err
+			}
+			// Another writer, while the unit is open. It commits on its own
+			// transaction, or waits for the unit to finish; either way it is not
+			// the unit's to undo.
+			go func() {
+				var o outcome
+				o.err = s.Credit(ctx, ledger.Posting{Holder: bob, Amount: 77 * money.Dollar, Ref: "other"})
+				// And what it can read is never the unit's uncommitted entry.
+				if o.err == nil {
+					o.seen, o.err = s.Balance(ctx, alice)
+				}
+				done <- o
+			}()
+			// Give a store that does not block the other writer time to let it
+			// finish inside the unit, which is the interleaving that matters.
+			time.Sleep(200 * time.Millisecond)
+			return sentinel
+		})
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("Within = %v, want the caller's error", err)
+		}
+		o := <-done
+		if o.err != nil {
+			t.Fatalf("the other writer: %v", o.err)
+		}
+		if o.seen != 5*money.Dollar {
+			t.Errorf("the other writer saw %s for alice, want $5: an uncommitted entry was visible", o.seen.String(money.USD))
+		}
+		if got := balance(t, s, ctx, bob); got != 77*money.Dollar {
+			t.Errorf("bob = %s, want $77: a commit by another writer was lost to someone else's rollback", got.String(money.USD))
+		}
+		if got := balance(t, s, ctx, alice); got != 5*money.Dollar {
+			t.Errorf("alice = %s, want $5: the failed unit's credit stayed", got.String(money.USD))
+		}
+	})
+
+	t.Run("a balance that does not fit in int64 is an error", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: money.Micro(math.MaxInt64), Ref: "big"})
+		mustCredit(t, s, ctx, ledger.Posting{Holder: bob, Amount: 1, Ref: "one"})
+		// Each balance fits; the total across holders does not.
+		if _, err := s.TotalOutstanding(ctx); !errors.Is(err, money.ErrRange) {
+			t.Errorf("TotalOutstanding = %v, want an error wrapping money.ErrRange", err)
+		}
+		if got, err := s.Balance(ctx, alice); err != nil || got != money.Micro(math.MaxInt64) {
+			t.Fatalf("Balance = %d, %v, want MaxInt64", got, err)
+		}
+		mustCredit(t, s, ctx, ledger.Posting{Holder: alice, Amount: 1, Ref: "over"})
+		if _, err := s.Balance(ctx, alice); !errors.Is(err, money.ErrRange) {
+			t.Errorf("Balance = %v, want an error wrapping money.ErrRange", err)
+		}
+		if _, err := s.Available(ctx, alice); !errors.Is(err, money.ErrRange) {
+			t.Errorf("Available = %v, want an error wrapping money.ErrRange", err)
+		}
+		if _, err := s.BalancesFor(ctx, []ledger.Holder{alice, bob}); !errors.Is(err, money.ErrRange) {
+			t.Errorf("BalancesFor = %v, want an error wrapping money.ErrRange", err)
+		}
+		if _, err := s.TotalOutstanding(ctx, "user"); !errors.Is(err, money.ErrRange) {
+			t.Errorf("TotalOutstanding(user) = %v, want an error wrapping money.ErrRange", err)
+		}
+		// A holder whose own balance fits is still readable.
+		if got, err := s.Balance(ctx, bob); err != nil || got != 1 {
+			t.Errorf("Balance(bob) = %d, %v, want 1", got, err)
+		}
+	})
+
+	t.Run("a namespace is matched literally", func(t *testing.T) {
+		s, ctx := newStore(t), context.Background()
+		if err := s.Debit(ctx, ledger.Posting{Holder: ledger.NewHolder("abc", "x"), Amount: 5, Ref: "d1"}); err != nil {
+			t.Fatalf("Debit: %v", err)
+		}
+		// "_" and "%" are LIKE wildcards; as namespaces they match nothing here.
+		for _, ns := range []string{"a_c", "%", "ab%", "a"} {
+			got, err := s.NegativeHolders(ctx, ns)
+			if err != nil {
+				t.Fatalf("NegativeHolders(%q): %v", ns, err)
+			}
+			if len(got) != 0 {
+				t.Errorf("namespace %q matched %v, want nothing: it is a name, not a pattern", ns, got)
+			}
+		}
+		got, err := s.NegativeHolders(ctx, "abc")
+		if err != nil || len(got) != 1 {
+			t.Errorf("NegativeHolders(abc) = %v, %v, want the one debtor", got, err)
 		}
 	})
 }

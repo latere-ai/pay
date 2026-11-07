@@ -48,6 +48,26 @@ var (
 	// ErrSameHolder reports a transfer to the holder it came from, which would
 	// write two entries that cancel and tell a reader nothing.
 	ErrSameHolder = errors.New("ledger: a transfer needs two different holders")
+	// ErrRefConflict reports a reference that is already recorded for a
+	// different write: another holder, kind, amount or group. A replay of the
+	// same write is not a conflict, it is idempotency working.
+	ErrRefConflict = errors.New("ledger: this reference is already recorded for a different write")
+	// ErrBadRef reports a reference that is blank or has leading or trailing
+	// space, which would store as a distinct key from the one the caller meant.
+	ErrBadRef = errors.New("ledger: a reference must not be blank or have surrounding space")
+	// ErrNotReversible reports a reversal of a transfer, a hold or a release.
+	// A transfer is two entries under one reference, so undoing one side would
+	// create money; a hold and a release are released by settlement.
+	ErrNotReversible = errors.New("ledger: this entry cannot be reversed")
+	// ErrSettled reports a hold on a group that already has its debit. Nothing
+	// would ever release it.
+	ErrSettled = errors.New("ledger: this group is already settled")
+	// ErrWrongHolder reports a settlement naming a different holder than the
+	// one whose hold it would release.
+	ErrWrongHolder = errors.New("ledger: the group's hold belongs to another holder")
+	// ErrDebitGroup reports a debit that carries a group. The debit of a group
+	// is what closes it, so only Settle may write one.
+	ErrDebitGroup = errors.New("ledger: a debit cannot carry a group, settle the group instead")
 )
 
 // Holder is whose money an entry is about: one namespaced string,
@@ -191,7 +211,9 @@ type Posting struct {
 	Amount money.Micro
 	Reason Reason
 	// Ref is the idempotency key. Required for Credit, and for any Debit a
-	// caller intends to retry; see the rollup shape below.
+	// caller intends to retry; see the rollup shape below. A reference used
+	// again for the same write is a no-op; used for any other write it is
+	// ErrRefConflict.
 	Ref    string
 	Group  string
 	Actor  string
@@ -224,9 +246,14 @@ type Settlement struct {
 	Labels map[string]string
 }
 
-// Reversal undoes a referenced entry.
+// Reversal undoes a referenced entry, whole. An entry is reversed at most
+// once: a second reversal of it under any other reference changes nothing and
+// reports Applied false, because the ledger records no partial reversal and a
+// second one would claw back the same money again.
 type Reversal struct {
-	// Of is the Ref of the entry being undone.
+	// Of is the Ref of the entry being undone. It must be a credit, debit,
+	// adjustment or reversal: a transfer, a hold and a release are refused with
+	// ErrNotReversible.
 	Of string
 	// Ref is the reversal's own reference, distinct from Of, so a refund dedupes
 	// independently of the purchase it reverses.
@@ -240,8 +267,8 @@ type Reversal struct {
 // package knowing what a crossing means. A product that freezes an account when
 // a balance goes negative compares Before and After; the policy is its own.
 type Effect struct {
-	// Applied is false when the reversal was already recorded, which is
-	// idempotency working rather than a failure.
+	// Applied is false when the entry was already reversed, under this
+	// reference or another, which is idempotency working rather than a failure.
 	Applied bool
 	Amount  money.Micro
 	Before  money.Micro
@@ -298,10 +325,10 @@ func CheckPosting(p Posting, needRef bool) error {
 	if p.Amount <= 0 {
 		return ErrNotPositive
 	}
-	if needRef && strings.TrimSpace(p.Ref) == "" {
+	if needRef && p.Ref == "" {
 		return ErrNoRef
 	}
-	return nil
+	return checkRef(p.Ref)
 }
 
 // CheckTransfer validates a two-sided move.
@@ -314,6 +341,46 @@ func CheckTransfer(t Transfer) error {
 	}
 	if t.Amount <= 0 {
 		return ErrNotPositive
+	}
+	return checkRef(t.Ref)
+}
+
+// CheckReversal validates a reversal before any store is consulted: both
+// references are present and well formed, and the reversal's own differs from
+// the entry it undoes, since a reference can name only one entry.
+func CheckReversal(r Reversal) error {
+	if r.Of == "" || r.Ref == "" {
+		return ErrNoRef
+	}
+	if err := checkRef(r.Of); err != nil {
+		return err
+	}
+	if err := checkRef(r.Ref); err != nil {
+		return err
+	}
+	if r.Of == r.Ref {
+		return ErrRefConflict
+	}
+	return nil
+}
+
+// checkRef refuses a reference that is blank or has surrounding space. An empty
+// reference is not checked here: whether one is required depends on the write.
+func checkRef(ref string) error {
+	if ref != "" && strings.TrimSpace(ref) != ref {
+		return ErrBadRef
+	}
+	return nil
+}
+
+// CheckReplay reports whether a stored entry is the same write as want. A write
+// whose reference already exists is a replay only when holder, kind, signed
+// amount and group all match; anything else is ErrRefConflict. Every store
+// calls it, so a replay means the same thing in each.
+func CheckReplay(stored, want Entry) error {
+	if stored.Holder != want.Holder || stored.Kind != want.Kind ||
+		stored.Amount != want.Amount || stored.Group != want.Group {
+		return ErrRefConflict
 	}
 	return nil
 }

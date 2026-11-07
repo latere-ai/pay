@@ -20,10 +20,18 @@ import (
 type Ops interface {
 	// Credit adds to a holder. Idempotent on Ref, which is required: money
 	// entering from outside always has an external reference to dedupe on.
+	//
+	// Every write that carries a Ref follows one rule. The same write again
+	// (holder, kind, amount and group all equal) is a no-op, even when its
+	// funds were used by the first attempt. A Ref already recorded for any other
+	// write is ErrRefConflict, and a Ref that is blank or has surrounding space
+	// is ErrBadRef.
 	Credit(ctx context.Context, p Posting) error
 	// Debit takes from a holder. Idempotent on Ref when one is given, which a
 	// caller that intends to retry must give. It does not refuse for want of
-	// balance: whether the work may happen is asked before the work.
+	// balance: whether the work may happen is asked before the work. It carries
+	// no Group (ErrDebitGroup): a group's debit is what settles it, so Settle
+	// writes that one.
 	Debit(ctx context.Context, p Posting) error
 	// Adjust corrects an entry after the fact, up or down.
 	Adjust(ctx context.Context, p Posting, up bool) error
@@ -31,14 +39,21 @@ type Ops interface {
 	// ErrInsufficient when the source cannot cover it.
 	Transfer(ctx context.Context, t Transfer) error
 	// Hold commits credit to a unit of work about to start, refusing with
-	// ErrInsufficient when there is not that much available.
+	// ErrInsufficient when there is not that much available and with
+	// ErrSettled when the group already has its debit, since nothing would
+	// ever release the hold.
 	Hold(ctx context.Context, p Posting) error
 	// Settle releases a group's hold and debits what the work cost, exactly
 	// once. False means another writer settled first, which is not an error.
+	// It writes nothing and returns ErrWrongHolder when the group's hold
+	// belongs to a holder other than the one named.
 	Settle(ctx context.Context, s Settlement) (bool, error)
-	// Reverse undoes a referenced entry, idempotent on the reversal's own
+	// Reverse undoes a referenced entry whole, idempotent on the reversal's own
 	// reference, and reports the balance either side so a product can act on a
-	// crossing this package has no opinion about.
+	// crossing this package has no opinion about. An entry is reversed at most
+	// once: a reversal of an entry already reversed under another reference
+	// writes nothing and returns Effect{Applied: false}. A transfer, a hold or
+	// a release is refused with ErrNotReversible.
 	Reverse(ctx context.Context, r Reversal) (Effect, error)
 }
 
@@ -53,7 +68,9 @@ type Store interface {
 
 	// Balance is everything a holder received less everything spent. It
 	// excludes holds: a hold has not been spent, and a holder whose only
-	// commitment is work in flight has not yet paid for it.
+	// commitment is work in flight has not yet paid for it. A balance that
+	// does not fit in int64 is an error wrapping money.ErrRange, here and in
+	// Available, BalancesFor and TotalOutstanding.
 	Balance(ctx context.Context, h Holder) (money.Micro, error)
 	// Available is Balance less every open hold: what a holder may still
 	// commit. This is the number an admission gate compares against, and the
@@ -77,6 +94,9 @@ type Store interface {
 	TotalOutstanding(ctx context.Context, namespaces ...string) (money.Micro, error)
 
 	// Within runs fn as one atomic unit against ledger-owned storage, for a
-	// caller with no transaction of its own to enlist in.
+	// caller with no transaction of its own to enlist in. A failed unit
+	// discards its own writes and no one else's, and no other writer sees the
+	// unit's entries until it commits. fn writes through the Ops it is given,
+	// never through the store.
 	Within(ctx context.Context, fn func(context.Context, Ops) error) error
 }

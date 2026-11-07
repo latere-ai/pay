@@ -5,8 +5,10 @@ package pgledger_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -60,6 +62,65 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	for i := range 3 {
 		if err := pgledger.Migrate(ctx, pool); err != nil {
 			t.Fatalf("migrate %d: %v", i, err)
+		}
+	}
+}
+
+// Several processes starting together on a database that has never seen the
+// ledger must all succeed. Each round runs in a schema of its own, so the
+// version table does not exist when the callers race to create it, and no
+// round disturbs the tables the other tests reset.
+func TestConcurrentMigrateOnAFreshDatabase(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("set TEST_DATABASE_URL to run the Postgres ledger tests")
+	}
+	ctx := context.Background()
+	admin, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(admin.Close)
+
+	const rounds, callers = 8, 12
+	for round := range rounds {
+		schema := fmt.Sprintf("pay_mig_%d_%d", time.Now().UnixNano(), round)
+		if _, err := admin.Exec(ctx, `CREATE SCHEMA `+schema); err != nil {
+			t.Fatalf("create schema: %v", err)
+		}
+		cfg, err := pgxpool.ParseConfig(dsn)
+		if err != nil {
+			t.Fatalf("parse config: %v", err)
+		}
+		// Only the round's schema is on the path, so every unqualified table
+		// the migration creates or reads belongs to it.
+		cfg.ConnConfig.RuntimeParams["search_path"] = schema
+		cfg.MaxConns = callers + 2
+		pool, err := pgxpool.NewWithConfig(ctx, cfg)
+		if err != nil {
+			t.Fatalf("pool: %v", err)
+		}
+		errs := make([]error, callers)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(callers)
+		for i := range callers {
+			go func(i int) {
+				defer wg.Done()
+				<-start
+				errs[i] = pgledger.Migrate(ctx, pool)
+			}(i)
+		}
+		close(start)
+		wg.Wait()
+		pool.Close()
+		for i, err := range errs {
+			if err != nil {
+				t.Errorf("round %d, caller %d: %v", round, i, err)
+			}
+		}
+		if _, err := admin.Exec(ctx, `DROP SCHEMA `+schema+` CASCADE`); err != nil {
+			t.Fatalf("drop schema: %v", err)
 		}
 	}
 }

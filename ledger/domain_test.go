@@ -325,25 +325,37 @@ func failAfter(n int) func([]byte) (int, error) {
 	}
 }
 
-// A transfer that fails between its two sides must not leave money in neither
-// place. The in-memory store has no transaction to roll back, so this pins that
-// the failure is reported rather than half-applied silently.
-func TestATransferInterruptedBetweenItsSidesReportsTheFailure(t *testing.T) {
+// A transfer whose second id cannot be minted moves nothing: not the source's
+// side, and nothing is posted to the destination. Postgres rolls both sides
+// back in a transaction; the in-memory store must reach the same state by
+// minting before it writes.
+func TestATransferInterruptedBetweenItsSidesMovesNothing(t *testing.T) {
 	s, ctx := ledger.NewMemStore(), context.Background()
 	if err := s.Credit(ctx, ledger.Posting{Holder: "user:a", Amount: 10 * money.Dollar, Ref: "seed"}); err != nil {
 		t.Fatalf("Credit: %v", err)
 	}
-	restore := ledger.SetRandReadForTest(failAfter(1)) // the debit mints, the credit does not
+	restore := ledger.SetRandReadForTest(failAfter(1)) // the first side mints, the second does not
 	defer restore()
 	err := s.Transfer(ctx, ledger.Transfer{From: "user:a", To: "user:b", Amount: 4 * money.Dollar})
 	restore()
 	if err == nil {
 		t.Fatal("Transfer reported success despite failing between its two sides")
 	}
+	if got, _ := s.Balance(ctx, "user:a"); got != 10*money.Dollar {
+		t.Errorf("source = %s, want $10: the failed transfer took money", got.String(money.USD))
+	}
+	if got, _ := s.Balance(ctx, "user:b"); got != 0 {
+		t.Errorf("destination = %s, want $0", got.String(money.USD))
+	}
+	if es, _ := s.Entries(ctx, "user:a", ledger.Page{}); len(es) != 1 {
+		t.Errorf("source has %d entries, want only the seed", len(es))
+	}
 }
 
-// The same for settlement, which writes a release and then a debit.
-func TestASettlementInterruptedBetweenItsEntriesReportsTheFailure(t *testing.T) {
+// The same for settlement, which writes a release and then a debit: a debit
+// that cannot be minted must not leave the release behind, or a retry would
+// release the hold a second time.
+func TestASettlementInterruptedBetweenItsEntriesMovesNothing(t *testing.T) {
 	s, ctx := ledger.NewMemStore(), context.Background()
 	if err := s.Credit(ctx, ledger.Posting{Holder: "project:p", Amount: 10 * money.Dollar, Ref: "seed"}); err != nil {
 		t.Fatalf("Credit: %v", err)
@@ -357,5 +369,15 @@ func TestASettlementInterruptedBetweenItsEntriesReportsTheFailure(t *testing.T) 
 	restore()
 	if err == nil || ok {
 		t.Fatalf("Settle = %v, %v, want a reported failure", ok, err)
+	}
+	if got, _ := s.Available(ctx, "project:p"); got != 6*money.Dollar {
+		t.Errorf("available = %s, want $6: the hold was released without its debit", got.String(money.USD))
+	}
+	if got, _ := s.Balance(ctx, "project:p"); got != 10*money.Dollar {
+		t.Errorf("balance = %s, want $10", got.String(money.USD))
+	}
+	// And the group is still open: a retry settles it.
+	if ok, err := s.Settle(ctx, ledger.Settlement{Holder: "project:p", Group: "g", Cost: money.Dollar}); err != nil || !ok {
+		t.Errorf("retry = %v, %v, want it to settle", ok, err)
 	}
 }
