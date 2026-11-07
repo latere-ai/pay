@@ -76,6 +76,10 @@ Secure prompt into a permanent decline. When a pending charge succeeds, deliver
 it as `KindPaid` with the `Charge.Ref` you returned as its `Ref`, so a consumer
 that also credited a synchronous success under that reference posts once.
 
+**6. Refuse an amount that is not positive** with `pay.ErrNotPositive`, before
+you call the processor. The processor would refuse it too, with an error the
+caller cannot branch on.
+
 ## Prove it
 
 ```go
@@ -88,7 +92,20 @@ func TestMyAdapter(t *testing.T) {
 ```
 
 The suite drives every operation your declared capabilities imply and asserts
-that everything else returns `ErrUnsupported`.
+that everything else returns `ErrUnsupported`. It also fails an adapter that
+accepts a delivery with no signature, and one that accepts a checkout or a
+charge for zero or a negative amount.
+
+Give the suite a signed delivery and it checks your webhook too: that a paid
+delivery becomes `KindPaid` with its reference, and that the same body with
+one byte changed is refused with `pay.ErrBadSignature`.
+
+```go
+paytest.RunProviderContract(t, newAdapter, caps,
+    paytest.WithPaidDelivery(func(t *testing.T, ref string) ([]byte, http.Header) {
+        return signedPaidFixture(t, ref) // your fixture, signed with the test secret
+    }))
+```
 
 ### Make it coverable
 
@@ -115,7 +132,9 @@ Same shape. Implement `ledger.Store` and run
 `ledgertest.RunStoreContract` against it. It asserts the things that are only
 true if every store agrees: concurrent holds admit exactly
 `floor(balance/reserve)` of them, concurrent settlements produce one debit,
-replayed rollups fold identically, and a failed unit of work moves nothing.
+an entry is reversed once, a replay writes nothing while a reused reference
+is refused, replayed rollups fold identically, and a failed unit of work
+moves nothing.
 
 If your store needs to enlist in the caller's transaction, expose that as a
 method on the concrete type rather than the interface, the way

@@ -61,9 +61,8 @@ The floor is 95% per package, above the shared default, because this is
 money. The two conformance suites, `paytest` and `ledgertest`, are exempt:
 most of their remaining statements are failure reports that run only against
 a broken implementation. `pgledger` is exempt from the database-free run and
-covered by the Postgres job. Across the shipped packages, with the database
-suite included, coverage is about 97%, which is the figure on the README
-badge.
+covered by the Postgres job. `make cover` prints each package's figure
+against the floor.
 
 ## How the code is laid out
 

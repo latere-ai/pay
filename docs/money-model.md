@@ -101,11 +101,18 @@ group.
 ## Idempotency
 
 Every write an outside system can replay takes a `Ref`, and a unique index
-refuses a second row for the same one.
+refuses a second row for the same one. A replay, with the same holder, kind,
+amount and group, writes nothing and returns `nil`. The same `Ref` on a
+different write is refused with `ledger.ErrRefConflict`, because two writes
+that share a reference are a bug in the caller, and dropping the second one
+in silence would hide it. A `Ref` that is blank, or starts or ends with a
+space, is refused with `ledger.ErrBadRef`.
 
 - A payment processor's reference on a purchase.
 - A refund's **own** reference, distinct from the purchase's, so a clawback
-  dedupes independently.
+  dedupes independently. An entry is reversed at most once, whatever the
+  reversal's reference: a second index allows one reversal per entry, so a
+  refund followed by a dispute takes the credit back once.
 - A window key on a rollup debit, for a caller metering somewhere fast and
   settling here periodically.
 

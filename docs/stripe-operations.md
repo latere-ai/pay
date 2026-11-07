@@ -16,6 +16,11 @@ endpoints, so each product registers its own with its own signing secret.
 A product's secret must never be shared with another: a leaked secret then
 forges deliveries only for the service it belongs to.
 
+Each endpoint receives every subscribed event of the account, so a product
+sees the refunds and disputes of the others' purchases too. Its handler
+acknowledges an event for a purchase it never recorded;
+[Webhooks](webhooks.md#idempotency-is-not-optional) shows how.
+
 ## Products and prices
 
 There are none, and that is deliberate. A credit top-up is an arbitrary
@@ -35,8 +40,8 @@ reduces to `KindIgnored` and the handler acknowledges.
 |---|---|
 | `checkout.session.completed` | The synchronous card path. Credit only when `payment_status == paid` |
 | `checkout.session.async_payment_succeeded` | SEPA, iDEAL, Bancontact. `completed` arrives unpaid and this confirms later |
-| `charge.refunded` | Reverse the credit |
-| `charge.dispute.created` | Reverse the credit |
+| `charge.refunded` | Reverse the whole credit, once |
+| `charge.dispute.created` | Reverse the whole credit, once |
 | `payment_intent.payment_failed` | Auto-recharge telemetry; not a ledger write |
 | `payment_intent.succeeded` | An off-session `ChargeSaved` that needed 3-D Secure. Credit once the customer authenticates |
 
@@ -140,10 +145,22 @@ Stripe account holds. That reconciliation is the whole point of
 
 ## Operator recovery
 
-- **A delivery failed.** Stripe retries on its own schedule. The handler
-  returns 500 only for errors worth retrying and 200 for anything it
-  cannot act on, so a poison event is acknowledged rather than retried
-  forever.
+- **A delivery failed.** Stripe retries after any answer other than 2xx,
+  for up to three days in live mode and three times within a few hours in
+  a sandbox. The handler answers 500
+  when your handler returns an error, and 400 for a delivery it refuses.
+  A delivery that verified but cannot be used, such as a paid session in
+  another currency, is refused on every retry: the log names it as an
+  unusable delivery. Refund that customer from the dashboard.
+- **A partial refund.** The ledger reverses the whole credit of a
+  purchase, whatever part of it was refunded, and only once. Refund a
+  top-up in full, or give back the part that was not refunded with an
+  `Adjust` whose `Ref` is your own, such as the refund's id followed by
+  `:kept`, so a second attempt adds nothing. The refund's id alone is
+  taken: the reversal carries it.
+- **A dispute you won.** The adapter does not read the dispute's outcome,
+  so its credit stays reversed. Restore it the same way, with an `Adjust`
+  whose `Ref` is the dispute's id followed by `:won`.
 - **A purchase charged but never credited.** Look up the payment intent
   in the ledger by `ref`. If absent, replay the delivery from the Stripe
   dashboard; idempotency makes a duplicate replay harmless.

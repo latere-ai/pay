@@ -31,7 +31,7 @@ flowchart TD
 | Situation | Code | Why |
 |---|---|---|
 | No processor configured, or a nil `Provider` | 200 | Stop a processor redelivering to a deployment that will never accept it |
-| The delivery cannot be verified or reduced | 400 | Nothing was posted, and a redelivery of the same bytes is refused the same way |
+| The delivery cannot be verified or reduced | 400 | Nothing was posted. The answer says `bad signature` or `unusable delivery` |
 | An event the port does not model | 200 | It will not become actionable on the fourth redelivery |
 | Handler returns `nil` | 200 | Done |
 | Handler returns an error | 500 | The **only** code that asks for a retry |
@@ -40,8 +40,17 @@ A delivery is refused with 400 when the adapter's `ParseWebhook` returns any
 error other than `pay.ErrUnconfigured`: a signature that does not verify, a
 body that does not decode, and anything the adapter fails closed on. The
 Stripe adapter fails closed on a paid event that carries no reference to
-dedupe on, and on an amount it cannot express in USD. Mount the handler with
-`pay.WithLogger` to see each refusal; without a logger nothing is logged.
+dedupe on, on an amount it cannot express in USD, and on an amount too large
+for the ledger. Mount the handler with `pay.WithLogger` to see each refusal
+and each delivery acknowledged without reaching your handler; without a
+logger nothing is logged.
+
+A processor treats a 400 like any other failure and redelivers; Stripe
+retries for up to three days in live mode, and three times within a few hours
+in a sandbox. A redelivery of the same bytes is refused the
+same way, so a delivery that verified but cannot be used is refused until
+the processor gives up. When it was a paid purchase, the customer was
+charged and nothing was credited: the log is where you find it.
 
 So: return an error from your handler **only** when a retry could succeed. A
 database that is briefly down, yes. An event you cannot make sense of, no.
@@ -60,14 +69,19 @@ parses vendor JSON.
 | Kind | Meaning | What to do |
 |---|---|---|
 | `KindPaid` | Money received: a checkout paid, or an off-session charge succeeded | `Credit`, keyed on `Ref` |
-| `KindRefunded` | Refunded | `Reverse`, keyed on `ReversalRef` |
-| `KindDisputed` | Charged back | `Reverse`, keyed on `ReversalRef` |
+| `KindRefunded` | Refunded | `Reverse` the purchase's credit, keyed on `ReversalRef` |
+| `KindDisputed` | Charged back | `Reverse` the purchase's credit, keyed on `ReversalRef` |
 | `KindPaymentFailed` | A charge did not go through | Reaches your handler for telemetry or to notify the customer. Never a ledger write; return `nil` |
 | `KindIgnored` | Not modeled | Never reaches your handler |
 
 `Ref` is the purchase's reference and is stable across deliveries of the same
 purchase. `ReversalRef` is the refund's **own** reference, distinct on purpose,
 so a clawback dedupes independently of what it reverses.
+
+A reversal undoes the whole entry, and an entry is reversed at most once. A
+second refund of the same purchase, or a dispute after a refund, reverses
+nothing more and reports `Applied == false`. Partial refunds are not modeled:
+a refund of part of a purchase reverses all of its credit.
 
 ## The two-delivery problem
 
@@ -147,11 +161,21 @@ func onEvent(ctx context.Context, e pay.Event) error {
         return book.Credit(ctx, ledger.Posting{…, Ref: e.Ref})
     case pay.KindRefunded, pay.KindDisputed:
         _, err := book.Reverse(ctx, ledger.Reversal{Of: e.Ref, Ref: e.ReversalRef})
+        if errors.Is(err, ledger.ErrNotFound) {
+            return nil // a purchase this ledger never recorded
+        }
         return err
     }
     return nil
 }
 ```
+
+One processor account often serves several products, and each endpoint
+receives the account's events, so a refund of another product's purchase
+reaches yours too. Return `nil` for it. An error asks for a retry, and no
+retry will make this ledger know the purchase. The same holds for a paid
+event your handler cannot read, such as one without the metadata your
+checkout sets: acknowledge it and log it.
 
 **Never hand-credit a wallet to fix a webhook problem.** A manual entry has no
 processor reference, so when the real delivery lands it credits again.
@@ -168,4 +192,5 @@ if eff.Applied && eff.Before >= 0 && eff.After < 0 {
 }
 ```
 
-`eff.Applied == false` means the reversal was already recorded.
+`eff.Applied == false` means nothing was written: this reversal was already
+recorded, or the entry was already reversed under another reference.

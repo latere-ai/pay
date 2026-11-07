@@ -104,6 +104,11 @@ settled, err := book.Settle(ctx, ledger.Settlement{
 
 `settled == false` means someone else settled this group first. Not an error.
 
+A group belongs to the holder of its hold, and settles once. `Settle` with
+another holder is refused with `ledger.ErrWrongHolder`, and a hold on a group
+that is already settled with `ledger.ErrSettled`. A `Debit` cannot name a
+group (`ledger.ErrDebitGroup`): a group's charge is what `Settle` writes.
+
 ### Commit the hold with your own row
 
 If the work has a row of its own, the hold and that row must commit together, or
@@ -119,6 +124,11 @@ if err := book.Bind(tx).Hold(ctx, posting); err != nil { return err }
 
 return tx.Commit(ctx)   // both, or neither
 ```
+
+Run that transaction at READ COMMITTED, the Postgres default. The hold locks
+the holder and then reads what is available; under REPEATABLE READ or
+SERIALIZABLE that read sees a snapshot taken before the lock, so two holds can
+both be admitted against the same money.
 
 ## 4. Show a statement
 
