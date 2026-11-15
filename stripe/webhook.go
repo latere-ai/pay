@@ -46,6 +46,11 @@ const (
 	eventSessionAsyncPaid = "checkout.session.async_payment_succeeded"
 	eventChargeRefunded   = "charge.refunded"
 	eventDisputeCreated   = "charge.dispute.created"
+	// eventDisputeClosed carries the dispute's outcome in its status, and only
+	// a win is modeled. eventDisputeReinstated is the funds returning to the
+	// merchant, which Stripe sends when it settles a won dispute.
+	eventDisputeClosed     = "charge.dispute.closed"
+	eventDisputeReinstated = "charge.dispute.funds_reinstated"
 	// eventPaymentFailed is auto-recharge telemetry, never a ledger write.
 	eventPaymentFailed = "payment_intent.payment_failed"
 	// eventIntentSucceeded completes an off-session charge that ChargeSaved
@@ -86,6 +91,10 @@ func (a *Adapter) ParseWebhook(payload []byte, h http.Header) (pay.Event, error)
 		return refunded(raw, payload)
 	case eventDisputeCreated:
 		return disputed(raw, payload)
+	case eventDisputeClosed:
+		return disputeClosed(raw, payload)
+	case eventDisputeReinstated:
+		return disputeWon(raw, payload)
 	case eventPaymentFailed:
 		return paymentFailed(raw, payload)
 	case eventIntentSucceeded:
@@ -416,16 +425,22 @@ func reversible(ref, reversalRef string) error {
 	return nil
 }
 
-// disputed reverses a credit a card network clawed back. The dispute's id is
-// the reversal's own reference.
-func disputed(raw, payload []byte) (pay.Event, error) {
-	var d struct {
-		ID            string            `json:"id"`
-		Amount        int64             `json:"amount"`
-		Currency      string            `json:"currency"`
-		PaymentIntent string            `json:"payment_intent"`
-		Metadata      map[string]string `json:"metadata"`
-	}
+// disputePayload is the minimal shape read from a dispute.
+type disputePayload struct {
+	ID            string            `json:"id"`
+	Amount        int64             `json:"amount"`
+	Currency      string            `json:"currency"`
+	PaymentIntent string            `json:"payment_intent"`
+	Metadata      map[string]string `json:"metadata"`
+}
+
+// disputeStatusWon is the status of a dispute decided for the merchant.
+const disputeStatusWon = "won"
+
+// disputeEvent reduces a dispute object to an event of the given kind. The
+// dispute's id is the reversal's own reference.
+func disputeEvent(kind pay.Kind, raw, payload []byte) (pay.Event, error) {
+	var d disputePayload
 	if err := json.Unmarshal(raw, &d, webhookJSON); err != nil {
 		return pay.Event{}, fmt.Errorf("pay/stripe: decode dispute: %w", err)
 	}
@@ -437,7 +452,7 @@ func disputed(raw, payload []byte) (pay.Event, error) {
 		return pay.Event{}, err
 	}
 	return pay.Event{
-		Kind:        pay.KindDisputed,
+		Kind:        kind,
 		Provider:    pay.Stripe,
 		Ref:         d.PaymentIntent,
 		ReversalRef: d.ID,
@@ -445,6 +460,34 @@ func disputed(raw, payload []byte) (pay.Event, error) {
 		Meta:        d.Metadata,
 		Raw:         payload,
 	}, nil
+}
+
+// disputed reverses a credit a card network clawed back. A dispute payload
+// names the disputed amount, and a dispute takes back whatever credit is left.
+func disputed(raw, payload []byte) (pay.Event, error) {
+	return disputeEvent(pay.KindDisputed, raw, payload)
+}
+
+// disputeWon restores what a dispute took back, for a dispute decided for the
+// merchant or whose funds were returned.
+func disputeWon(raw, payload []byte) (pay.Event, error) {
+	return disputeEvent(pay.KindDisputeWon, raw, payload)
+}
+
+// disputeClosed reduces a closed dispute: a win is a pay.KindDisputeWon, and
+// every other outcome is ignored, since a lost dispute is the charge.dispute
+// created delivery's reversal standing.
+func disputeClosed(raw, payload []byte) (pay.Event, error) {
+	var d struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &d, webhookJSON); err != nil {
+		return pay.Event{}, fmt.Errorf("pay/stripe: decode dispute: %w", err)
+	}
+	if d.Status != disputeStatusWon {
+		return ignored(payload), nil
+	}
+	return disputeWon(raw, payload)
 }
 
 // paymentFailed carries a failed off-session charge.

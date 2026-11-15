@@ -71,6 +71,7 @@ parses vendor JSON.
 | `KindPaid` | Money received: a checkout paid, or an off-session charge succeeded | `Credit`, keyed on `Ref` |
 | `KindRefunded` | Refunded | `Reverse` the purchase's credit, keyed on `ReversalRef` |
 | `KindDisputed` | Charged back | `Reverse` the purchase's credit, keyed on `ReversalRef` |
+| `KindDisputeWon` | A dispute decided for you | Restore what that dispute took, keyed on `ReversalRef`, the dispute's id |
 | `KindPaymentFailed` | A charge did not go through | Reaches your handler for telemetry or to notify the customer. Never a ledger write; return `nil` |
 | `KindIgnored` | Not modeled | Never reaches your handler |
 
@@ -81,7 +82,10 @@ so a clawback dedupes independently of what it reverses.
 A reversal undoes the whole entry, and an entry is reversed at most once. A
 second refund of the same purchase, or a dispute after a refund, reverses
 nothing more and reports `Applied == false`. Partial refunds are not modeled:
-a refund of part of a purchase reverses all of its credit.
+a refund of part of a purchase reverses all of its credit. A handler that
+wants only the refunded share reads the charge's `amount` and `amount_refunded`
+from `Raw`, which share the charge's own currency, so their ratio needs no
+conversion.
 
 ## The two-delivery problem
 

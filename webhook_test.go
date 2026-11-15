@@ -308,3 +308,13 @@ func TestWebhookHandlerLogsAcknowledgedDrops(t *testing.T) {
 		}
 	}
 }
+
+func TestMemProviderCarriesAWonDispute(t *testing.T) {
+	p := &pay.MemProvider{Secret: "s"}
+	h := http.Header{}
+	h.Set(pay.MemHeader, "s")
+	won, err := p.ParseWebhook(pay.MemEvent(pay.KindDisputeWon, "pi_1", 0, nil, pay.WithReversalRef("dp_1")), h)
+	if err != nil || won.Kind != pay.KindDisputeWon || won.ReversalRef != "dp_1" {
+		t.Errorf("a won dispute = %+v, %v", won, err)
+	}
+}

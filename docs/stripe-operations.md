@@ -42,6 +42,8 @@ reduces to `KindIgnored` and the handler acknowledges.
 | `checkout.session.async_payment_succeeded` | SEPA, iDEAL, Bancontact. `completed` arrives unpaid and this confirms later |
 | `charge.refunded` | Reverse the whole credit, once |
 | `charge.dispute.created` | Reverse the whole credit, once |
+| `charge.dispute.closed` | A dispute closed as won becomes `KindDisputeWon`; any other outcome is ignored |
+| `charge.dispute.funds_reinstated` | The funds of a won dispute returned: `KindDisputeWon` |
 | `payment_intent.payment_failed` | Auto-recharge telemetry; not a ledger write |
 | `payment_intent.succeeded` | An off-session `ChargeSaved` that needed 3-D Secure. Credit once the customer authenticates |
 
@@ -158,8 +160,10 @@ Stripe account holds. That reconciliation is the whole point of
   `Adjust` whose `Ref` is your own, such as the refund's id followed by
   `:kept`, so a second attempt adds nothing. The refund's id alone is
   taken: the reversal carries it.
-- **A dispute you won.** The adapter does not read the dispute's outcome,
-  so its credit stays reversed. Restore it the same way, with an `Adjust`
+- **A dispute you won.** The adapter reports it as `KindDisputeWon`, with
+  the dispute's id as `ReversalRef`. Stripe may send both
+  `charge.dispute.closed` and `charge.dispute.funds_reinstated` for one win,
+  so key the restoring entry on `ReversalRef`, for example with an `Adjust`
   whose `Ref` is the dispute's id followed by `:won`.
 - **A purchase charged but never credited.** Look up the payment intent
   in the ledger by `ref`. If absent, replay the delivery from the Stripe

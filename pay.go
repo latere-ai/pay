@@ -172,6 +172,12 @@ const (
 	// KindRefunded and KindDisputed are money clawed back: reverse the credit.
 	KindRefunded Kind = "refunded"
 	KindDisputed Kind = "disputed"
+	// KindDisputeWon is a dispute the merchant won: the card network returned
+	// the funds, so the credit a KindDisputed took back is owed again. Its
+	// ReversalRef is the dispute's id, the same one the KindDisputed carried,
+	// so a handler finds what that dispute took. A processor may report a win
+	// more than once, so a handler keys its restoring entry on ReversalRef.
+	KindDisputeWon Kind = "dispute_won"
 	// KindPaymentFailed is a charge that did not go through. It is never a
 	// ledger write, and it is modeled anyway because auto-recharge needs to
 	// know its attempt failed. Reducing it to KindIgnored would mean

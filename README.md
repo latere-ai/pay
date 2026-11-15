@@ -26,11 +26,11 @@ what it protects, and the test that checks each property.
 |---|---|
 | `money`: integer amounts in micro-USD, USD and EUR, rounding, the spread a seller keeps | Works |
 | `pay`: the processor port, `WebhookHandler`, and `MemProvider`, a processor fake for tests | Works |
-| `stripe`: hosted Checkout, saved customers, off-session charges with 3-D Secure, and six webhook events | Works, in USD only. Tested against a stub of the Stripe API; no test calls Stripe |
+| `stripe`: hosted Checkout, saved customers, off-session charges with 3-D Secure, and eight webhook events | Works, in USD only. Tested against a stub of the Stripe API; no test calls Stripe |
 | `ledger`: credits, debits, holds, transfers, settlement, reversals, and an in-memory store | Works |
 | `pgledger`: the Postgres store, and holds that commit in your own transaction | Works. Tested against Postgres 17 |
 | `paytest` and `ledgertest`: conformance suites for your own adapter or store | Works |
-| Refunds and disputes | A refund or a dispute reverses the whole credit, once. Partial refunds and a won dispute are not modeled |
+| Refunds and disputes | A refund or a dispute reverses the whole credit, once. Partial refunds are not modeled. A won dispute is reported as `KindDisputeWon` |
 | Holds | A hold lasts until its group is settled. There is no expiry; settle with a cost of 0 to release one |
 | PayPal and Paddle | Named in the vocabulary, with no adapter |
 | Subscriptions, a billing portal, saving a card without a charge | Not built |

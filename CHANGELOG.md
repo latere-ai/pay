@@ -12,6 +12,10 @@ committed: the commit log already holds that.
 
 ### Added
 
+- **A won dispute is reported.** The new `pay.KindDisputeWon` is emitted for
+  `charge.dispute.closed` with status `won` and for
+  `charge.dispute.funds_reinstated`, with the dispute's id as `ReversalRef`.
+  Subscribe the endpoint to both events; Stripe may send both for one win.
 - **`pay.MemEvent` builds a refund.** The options `pay.WithReversalRef` and
   `pay.WithEmail` set the refund's own reference and the payer's email, so a
   test drives a purchase, its credit and its refund through the handler.
