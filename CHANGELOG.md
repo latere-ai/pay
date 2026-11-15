@@ -24,6 +24,8 @@ committed: the commit log already holds that.
 
 ### Changed
 
+- Built with Go 1.27.4, which fixes GO-2026-6859.
+
 - **`pgledger.Migrate` adds a migration.** Version 2 adds the column
   `reverses` to `ledger_entries` and a unique index on it, so the database
   allows one reversal per entry. Run `Migrate` before the new release
