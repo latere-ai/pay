@@ -10,6 +10,24 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+### Changed
+
+- **A dispute inquiry takes nothing.** `charge.dispute.created` with a
+  `warning_` status is ignored, and `charge.dispute.funds_withdrawn` reports
+  `pay.KindDisputed` with the dispute's id as `ReversalRef`, the same as a
+  chargeback's `charge.dispute.created`. Subscribe the endpoint to
+  `charge.dispute.funds_withdrawn`; a consumer that receives both for one
+  chargeback dedupes them on `ReversalRef`.
+
+### Fixed
+
+- **Each refund of a charge has its own `ReversalRef`.** When the
+  `charge.refunded` payload lists no refunds, as Stripe sends since API version
+  2022-11-15, `ReversalRef` is the charge id, a colon and the charge's
+  cumulative `amount_refunded`, for example `ch_1:1500`. It was the charge id,
+  so a second partial refund looked like a replay. A redelivery repeats the
+  same value.
+
 ## v0.3.0 - 2026-11-16
 
 ### Added

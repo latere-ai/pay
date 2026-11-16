@@ -362,7 +362,9 @@ type chargePayload struct {
 //
 // The payment intent finds the original purchase; the refund's own id is this
 // reversal's reference, so a reversal dedupes independently of the purchase and
-// a second partial refund is not mistaken for a replay of the first.
+// a second partial refund is not mistaken for a replay of the first. When the
+// payload lists no refunds, the reference is the charge id and its cumulative
+// refunded amount.
 //
 // Gross is advisory here and may be zero. The ledger reverses the exact
 // micro-USD it credited, found through Ref, rather than the amount refunded: a
@@ -398,11 +400,18 @@ func refunded(raw, payload []byte) (pay.Event, error) {
 // newest-first, so taking the last element picks the *oldest* refund and a
 // second partial refund would re-emit a reference the ledger has already
 // deduped, silently dropping the reversal. Ties keep the earlier element, which
-// is the newer one under that ordering. A charge with no refunds in the payload
-// falls back to the charge itself, which is still distinct from the purchase's
-// payment intent.
+// is the newer one under that ordering.
+//
+// A payload with no refunds list, which Stripe sends since API version
+// 2022-11-15, falls back to the charge id plus its cumulative amount_refunded.
+// Each new refund raises that amount, so every refund of one charge gets its
+// own reference, and a redelivery of the same event repeats it.
 func latestRefund(c *chargePayload) (ref string, amount int64, cur string) {
-	ref, amount, cur = c.ID, c.AmountRefunded, c.Currency
+	amount, cur = c.AmountRefunded, c.Currency
+	// A charge with no id stays unreferenced, so reversible refuses it.
+	if c.ID != "" {
+		ref = c.ID + ":" + strconv.FormatInt(c.AmountRefunded, 10)
+	}
 	newest := int64(-1)
 	for _, r := range c.Refunds.Data {
 		if r.Created > newest {

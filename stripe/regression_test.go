@@ -187,11 +187,40 @@ func TestRegression_ARefundWithNoRefundListStillReverses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseWebhook: %v", err)
 	}
-	if ev.ReversalRef != "ch_test_2" || ev.Ref != "pi_test_2" {
-		t.Errorf("Ref = %q, ReversalRef = %q, want pi_test_2 and ch_test_2", ev.Ref, ev.ReversalRef)
+	if ev.ReversalRef != "ch_test_2:2000" || ev.Ref != "pi_test_2" {
+		t.Errorf("Ref = %q, ReversalRef = %q, want pi_test_2 and ch_test_2:2000", ev.Ref, ev.ReversalRef)
 	}
 	if ev.Gross != 20*money.Dollar {
 		t.Errorf("Gross = %v, want %v", ev.Gross, 20*money.Dollar)
+	}
+}
+
+func TestRegression_RefundsWithNoRefundListGetOneReferenceEach(t *testing.T) {
+	// Since API version 2022-11-15 charge.refunded omits the refunds list. The
+	// charge's cumulative amount_refunded then tells refunds apart: a second
+	// partial refund raises it, and a redelivery repeats it.
+	a := newAdapter(t, newStub(t))
+	refOf := func(refunded int) string {
+		t.Helper()
+		payload := eventPayload(t, eventChargeRefunded, map[string]any{
+			"id":              "ch_multi",
+			"object":          "charge",
+			"currency":        "usd",
+			"amount_refunded": refunded,
+			"payment_intent":  "pi_multi",
+		})
+		ev, err := a.ParseWebhook(payload, signedNow(payload))
+		if err != nil {
+			t.Fatalf("ParseWebhook: %v", err)
+		}
+		return ev.ReversalRef
+	}
+	first, second, replay := refOf(500), refOf(1500), refOf(500)
+	if first == second {
+		t.Errorf("two refunds of one charge share ReversalRef %q", first)
+	}
+	if first != replay {
+		t.Errorf("a redelivery changed ReversalRef from %q to %q", first, replay)
 	}
 }
 
