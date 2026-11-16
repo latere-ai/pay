@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.3.1 - 2026-11-16
+
 ### Changed
 
 - **A dispute inquiry takes nothing.** `charge.dispute.created` with a
