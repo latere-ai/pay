@@ -46,6 +46,10 @@ const (
 	eventSessionAsyncPaid = "checkout.session.async_payment_succeeded"
 	eventChargeRefunded   = "charge.refunded"
 	eventDisputeCreated   = "charge.dispute.created"
+	// eventDisputeWithdrawn is the money leaving the merchant's balance, which
+	// Stripe sends when a dispute is a chargeback, including an inquiry that
+	// escalated into one.
+	eventDisputeWithdrawn = "charge.dispute.funds_withdrawn"
 	// eventDisputeClosed carries the dispute's outcome in its status, and only
 	// a win is modeled. eventDisputeReinstated is the funds returning to the
 	// merchant, which Stripe sends when it settles a won dispute.
@@ -90,6 +94,8 @@ func (a *Adapter) ParseWebhook(payload []byte, h http.Header) (pay.Event, error)
 	case eventChargeRefunded:
 		return refunded(raw, payload)
 	case eventDisputeCreated:
+		return disputeOpened(raw, payload)
+	case eventDisputeWithdrawn:
 		return disputed(raw, payload)
 	case eventDisputeClosed:
 		return disputeClosed(raw, payload)
@@ -437,6 +443,10 @@ type disputePayload struct {
 // disputeStatusWon is the status of a dispute decided for the merchant.
 const disputeStatusWon = "won"
 
+// disputeStatusInquiryPrefix starts the status of a dispute that is only an
+// inquiry, with no funds withdrawn.
+const disputeStatusInquiryPrefix = "warning_"
+
 // disputeEvent reduces a dispute object to an event of the given kind. The
 // dispute's id is the reversal's own reference.
 func disputeEvent(kind pay.Kind, raw, payload []byte) (pay.Event, error) {
@@ -460,6 +470,22 @@ func disputeEvent(kind pay.Kind, raw, payload []byte) (pay.Event, error) {
 		Meta:        d.Metadata,
 		Raw:         payload,
 	}, nil
+}
+
+// disputeOpened reduces a created dispute. An inquiry, a status starting with
+// "warning_", withdraws no funds and is ignored: if it escalates into a
+// chargeback, Stripe sends eventDisputeWithdrawn for the same dispute.
+func disputeOpened(raw, payload []byte) (pay.Event, error) {
+	var d struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &d, webhookJSON); err != nil {
+		return pay.Event{}, fmt.Errorf("pay/stripe: decode dispute: %w", err)
+	}
+	if strings.HasPrefix(d.Status, disputeStatusInquiryPrefix) {
+		return ignored(payload), nil
+	}
+	return disputed(raw, payload)
 }
 
 // disputed reverses a credit a card network clawed back. A dispute payload

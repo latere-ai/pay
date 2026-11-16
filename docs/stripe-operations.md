@@ -41,7 +41,8 @@ reduces to `KindIgnored` and the handler acknowledges.
 | `checkout.session.completed` | The synchronous card path. Credit only when `payment_status == paid` |
 | `checkout.session.async_payment_succeeded` | SEPA, iDEAL, Bancontact. `completed` arrives unpaid and this confirms later |
 | `charge.refunded` | Reverse the whole credit, once |
-| `charge.dispute.created` | Reverse the whole credit, once |
+| `charge.dispute.created` | Reverse the whole credit, once. An inquiry (status `warning_*`) takes nothing and is ignored |
+| `charge.dispute.funds_withdrawn` | The money left the balance: `KindDisputed`, with the dispute's id as `ReversalRef`. Also how an inquiry that escalated to a chargeback reverses |
 | `charge.dispute.closed` | A dispute closed as won becomes `KindDisputeWon`; any other outcome is ignored |
 | `charge.dispute.funds_reinstated` | The funds of a won dispute returned: `KindDisputeWon` |
 | `payment_intent.payment_failed` | Auto-recharge telemetry; not a ledger write |
@@ -160,6 +161,10 @@ Stripe account holds. That reconciliation is the whole point of
   `Adjust` whose `Ref` is your own, such as the refund's id followed by
   `:kept`, so a second attempt adds nothing. The refund's id alone is
   taken: the reversal carries it.
+- **A dispute and its withdrawal.** `charge.dispute.created` and
+  `charge.dispute.funds_withdrawn` both report `KindDisputed` with the
+  dispute's id as `ReversalRef`, so key the reversal on `ReversalRef` and
+  the second delivery adds nothing.
 - **A dispute you won.** The adapter reports it as `KindDisputeWon`, with
   the dispute's id as `ReversalRef`. Stripe may send both
   `charge.dispute.closed` and `charge.dispute.funds_reinstated` for one win,

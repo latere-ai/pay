@@ -499,3 +499,42 @@ func TestParseWebhook_AnEventWithNoDataMemberDoesNotPanic(t *testing.T) {
 		})
 	}
 }
+
+func TestParseWebhook_AnInquiryTakesNothingUntilFundsAreWithdrawn(t *testing.T) {
+	a := newAdapter(t, newStub(t))
+	dispute := func(status string) map[string]any {
+		return map[string]any{
+			"id": "dp_test_2", "object": "dispute", "status": status,
+			"amount": 2000, "currency": "usd", "payment_intent": "pi_test_2",
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		event  string
+		status string
+		want   pay.Kind
+	}{
+		{"inquiry needs response", eventDisputeCreated, "warning_needs_response", pay.KindIgnored},
+		{"inquiry under review", eventDisputeCreated, "warning_under_review", pay.KindIgnored},
+		{"inquiry closed", eventDisputeCreated, "warning_closed", pay.KindIgnored},
+		{"chargeback created", eventDisputeCreated, "needs_response", pay.KindDisputed},
+		{"funds withdrawn", eventDisputeWithdrawn, "needs_response", pay.KindDisputed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := eventPayload(t, tc.event, dispute(tc.status))
+			ev, err := a.ParseWebhook(payload, signedNow(payload))
+			if err != nil {
+				t.Fatalf("ParseWebhook: %v", err)
+			}
+			if ev.Kind != tc.want {
+				t.Fatalf("Kind = %q, want %q", ev.Kind, tc.want)
+			}
+			if tc.want != pay.KindDisputed {
+				return
+			}
+			if ev.Ref != "pi_test_2" || ev.ReversalRef != "dp_test_2" || ev.Gross != 20*money.Dollar {
+				t.Errorf("event = ref %q reversal %q gross %v, want pi_test_2, the dispute id, $20", ev.Ref, ev.ReversalRef, ev.Gross)
+			}
+		})
+	}
+}
