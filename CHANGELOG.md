@@ -10,6 +10,8 @@ committed: the commit log already holds that.
 
 ## Unreleased
 
+## v0.3.0 - 2026-11-16
+
 ### Added
 
 - **A won dispute is reported.** The new `pay.KindDisputeWon` is emitted for
